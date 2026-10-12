@@ -1,0 +1,103 @@
+{
+  "source_repository": "/Users/gook/Repos/gams3",
+  "revision": "6fbc4f97e2894e8496c94be3999e31c3abc353e5",
+  "note": "Original inputs before adaptation; no publication or license clearance implied. Bridge taken from tracked example source because original Makefile path is absent.",
+  "inputs": [
+    {
+      "source": "plugins/game/plugin.mk",
+      "sha256": "83ff18e6485578723ead4abac4b53c8aa42c554397b972bf0b7a0cb495b280f8"
+    },
+    {
+      "source": "plugins/game/Makefile",
+      "sha256": "b5d9d743c3c9334deb64d31953451e32c2e7685c88502d9498102d846a62f4ba"
+    },
+    {
+      "source": "plugins/game/triangle-sapp.glsl",
+      "sha256": "0f96082bbaad6c81c25980aa0d26dd7423e926d9a461d368a2090c482cefaca6"
+    },
+    {
+      "source": "plugins/game/triangle-sapp.glsl.h",
+      "sha256": "baa328d51d4317834b9cb43fca63445fd8c62af440ee7eb499a485e2c5125c9e"
+    },
+    {
+      "source": "plugins/game/main.c",
+      "sha256": "50b4e9527a5f7caf260a97ff058a3e3e3dd1c4a4b44a6e0a8afeec4ceb52acdc"
+    },
+    {
+      "source": "plugins/game/.gitignore",
+      "sha256": "87b87769d9efa1548570245bcfc3356f19e4af75090a0056ea905c6e88f842f5"
+    },
+    {
+      "source": "plugins/game/asset_io.h",
+      "sha256": "8739d66bb6d38229cebe09b4c1597cc0664a5de26c9656024abd6bc1c85f2159"
+    },
+    {
+      "source": "plugins/game/osx/asset_io_osx.c",
+      "sha256": "2d050fe873704e59fb0d3d16717223a9e29b03ba322c99d16e43b481ba2d126b"
+    },
+    {
+      "source": "plugins/game/osx/main.c",
+      "sha256": "f61b8d25df4a9b8474f22cf8a85f1757dad6e72cdd99789bd6d438294046519b"
+    },
+    {
+      "source": "plugins/game/osx/sokol_impl.m",
+      "sha256": "68f12ea9deb5096759f4a187f05e0a059ecfec94eaa0a6aff8994772f8a6d557"
+    },
+    {
+      "source": "plugins/game/osx/sokol_glue.h",
+      "sha256": "b556ce7ad6e4bdbff4d1d4d667173f2c5792160449ce3d30e98a7bf86047c64d"
+    },
+    {
+      "source": "plugins/game/web/index.html",
+      "sha256": "ccdd0f5944d9ae88b89b2a229949865c25795c36709a67fa392e363d09a0cd25"
+    },
+    {
+      "source": "plugins/game/web/main.c",
+      "sha256": "afada068f77fe513ed162f15ca6db4c642e207448a06691c8a41d7a410f75a82"
+    },
+    {
+      "source": "plugins/game/web/asset_io_web.c",
+      "sha256": "84f3afdb5b7f4fc207d3ad9dd232e9eaec02a33156eb95e612ec844f34abd9be"
+    },
+    {
+      "source": "plugins/game/vendor/sokol_log.h",
+      "sha256": "b1bf1403c738b8f18b09819d9190ac160298dd590440c9df57cb9d90b77eb29d"
+    },
+    {
+      "source": "plugins/game/vendor/sokol_gfx.h",
+      "sha256": "7b212e7d385d6f59951ae312ba8b0017bd028ebe0eea4b90712ef78763bb4dc1"
+    },
+    {
+      "source": "plugins/game/vendor/sokol_app.h",
+      "sha256": "7329fb760fcb441c13bf5b1bdfe6fc563cb84e4a3a37a143bf1358e86e457720"
+    },
+    {
+      "source": "plugins/game/web/wasm-include/stdlib.h",
+      "sha256": "d1cc3fec08eb530586085d52df12aedcd31d9df0fca5f71e42c1e6a2d0debe1d"
+    },
+    {
+      "source": "plugins/game/web/wasm-include/gl_funcs.h",
+      "sha256": "9e4eff9a4762f30dc1d192391b24da4ab51792e1b816635683255d093f29d289"
+    },
+    {
+      "source": "plugins/game/web/wasm-include/stdio.h",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "plugins/game/web/wasm-include/assert.h",
+      "sha256": "960d0f5a819068ebb5977e6dbdcdc6900ca4b054c800c62514b964bf11712674"
+    },
+    {
+      "source": "plugins/game/web/wasm-include/string.h",
+      "sha256": "f60642b1e4f03f63f4da2211eeed9353b1b4ac91eb01b5f83e543a10f0cbda64"
+    },
+    {
+      "source": "plugins/game/web/wasm-include/GLES3/gl3.h",
+      "sha256": "ba35fea2964f8c46ad2c84d1283e49b3dde29c13a11799bd172dfd58a08d7524"
+    },
+    {
+      "source": "examples/demo/game/web/gl-bridge.js",
+      "sha256": "5bc17292932241f5f511fb3e7cf87555c1255e08b700fd51e96e34f0d4c16551"
+    }
+  ]
+}
