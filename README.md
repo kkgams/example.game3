@@ -27,6 +27,19 @@ Browser controls: Pause/Resume and Reload. Missing WASM, unsupported WebGL2,
 Sokol errors and context loss appear explicitly in the status bar.
 Reload cleans up GPU resources and instantiates fresh WASM memory.
 
+## Optional GAMS Host
+
+```sh
+make tools/gams.app  # download the latest kkgams/gams release only if absent
+```
+
+Requires macOS Apple Silicon and `unzip`. Fetches release metadata from GitHub,
+extracts the macOS ARM64 app and installs it at `tools/gams.app`. Existing apps
+are untouched; remove that directory to download a newer release. Temporary
+archives/extraction stay under `build.nosync/` and are cleaned on success/failure.
+`make clean` preserves the installed app. No app launch or Host integration is
+performed, and standalone builds do not require this target.
+
 ## Dependencies and shaders
 
 ```sh
@@ -65,9 +78,10 @@ headers. The next build regenerates missing depfiles to restore include tracking
 
 ## Verification status
 
-- Clean native/browser builds and `make test`: passed (6 Node tests).
+- Clean native/browser builds and `make test`: passed (9 Node tests).
   Dependency tests cover missing-file downloads, preserving existing edits,
-  changed URLs, failed downloads and retries. Real shader-compiler tests cover nested sources,
+  changed URLs, failed downloads and retries, plus GAMS release installation,
+  staging cleanup and unsupported hosts. Real shader-compiler tests cover nested sources,
   incremental generation, includes, missing output/cache, invalid GLSL and clean.
   Real WASM is exercised with a mock GPU, including rotation uniform, resize,
   draw and cleanup. This is not browser pixel proof.

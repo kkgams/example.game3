@@ -1,0 +1,12 @@
+GAMS Project Unit: view.code
+GAMS-authored code is licensed under Apache-2.0 by owner authorization.
+
+Bounded engineering inventory (not a perfect ownership/provenance assertion):
+- src/views/view-code.js
+
+No npm dependencies are vendored. Absolute /core/, /util/, /widgets/ libraries
+are supplied separately by the Host and excluded from this ZIP. Textual icon
+ligatures and system font-family names do not bundle icon/font files.
+Sibling Project Units and their licensing remain separate.
+
+NOTICE-EVIDENCE.json SHA-256: 4f77f69669cdeaf28a9e1a1034e8f9d96a49e572e950882d125a82747dfbeeed

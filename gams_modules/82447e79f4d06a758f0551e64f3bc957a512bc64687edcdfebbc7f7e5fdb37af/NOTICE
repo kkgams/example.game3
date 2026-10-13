@@ -1,0 +1,12 @@
+GAMS Project Unit: ui-service.keys
+GAMS-authored code is licensed under Apache-2.0 by owner authorization.
+
+Bounded engineering inventory (not a perfect ownership/provenance assertion):
+- src/ui-plugins/keys.js
+
+No npm dependencies are vendored. Absolute /core/, /util/, /widgets/ libraries
+are supplied separately by the Host and excluded from this ZIP. Textual icon
+ligatures and system font-family names do not bundle icon/font files.
+Sibling Project Units and their licensing remain separate.
+
+NOTICE-EVIDENCE.json SHA-256: 7119a76077e87310252abc640d64c70e23e180071f17b9df8fc0ed2e914261cd

@@ -7,6 +7,7 @@ PORT ?= 8816
 BUILD := build.nosync
 SOKOL_URL ?= https://raw.githubusercontent.com/floooh/sokol/master
 SHDC_URL ?= https://raw.githubusercontent.com/floooh/sokol-tools-bin/master/bin
+GAMS_RELEASE_API ?= https://api.github.com/repos/kkgams/gams/releases/latest
 UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_S),Darwin)
@@ -50,6 +51,22 @@ $(SOKOL_SHDC):
 		$(CURL) --fail --location --silent --show-error "$(SHDC_URL)/$(SHDC_PLATFORM)/sokol-shdc" --output "$@.tmp"; \
 		chmod +x "$@.tmp"; \
 		mv "$@.tmp" "$@"
+
+# Optional Host download, independent of standalone game builds. Existing app
+# directories have no prerequisites and are never refreshed by ordinary Make.
+tools/gams.app:
+	@test "$(UNAME_S)" = Darwin && test "$(SHDC_PLATFORM)" = osx_arm64 || \
+		{ echo 'GAMS release download requires macOS Apple Silicon' >&2; exit 1; }
+	@mkdir -p tools "$(BUILD)"
+	@set -eu; stage=$$(mktemp -d "$(BUILD)/gams-download.XXXXXX"); \
+		trap 'rm -rf "$$stage"' EXIT; \
+		$(CURL) --fail --location --silent --show-error "$(GAMS_RELEASE_API)" --output "$$stage/release.json"; \
+		url=$$($(PYTHON) -c 'import json, sys; release = json.load(open(sys.argv[1])); assets = [a for a in release["assets"] if a["name"].startswith("GAMS-") and a["name"].endswith("-macos-aarch64.zip")]; assert len(assets) == 1, "Expected exactly one GAMS macOS Apple Silicon ZIP asset"; print(assets[0]["browser_download_url"])' "$$stage/release.json"); \
+		$(CURL) --fail --location --silent --show-error "$$url" --output "$$stage/gams.zip"; \
+		unzip -q "$$stage/gams.zip" -d "$$stage/unpacked"; \
+		test -f "$$stage/unpacked/GAMS.app/Contents/Info.plist"; \
+		test -x "$$stage/unpacked/GAMS.app/Contents/MacOS/gams"; \
+		mv "$$stage/unpacked/GAMS.app" "$@"
 
 # Missing local depfiles require one regeneration to restore include tracking.
 ifneq ($(strip $(SHADERS_MISSING_DEPS)),)

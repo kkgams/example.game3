@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -30,6 +30,10 @@ done
 printf '%s\\n' "$url" >> downloads.log
 printf '%s\\n' "$url" > "$output"
 if [ -f fail-download ]; then exit 22; fi
+case "$url" in
+  https://example.invalid/release) cp release.json "$output" ;;
+  https://example.invalid/GAMS-fixture-macos-aarch64.zip) cp gams.zip "$output" ;;
+esac
 `)
   await chmod(curl, 0o755)
   return folder
@@ -71,6 +75,68 @@ test('ordinary Make file targets download only missing dependencies and preserve
   make(folder, 'clean')
   await stat(tool)
   await stat(edited)
+})
+
+async function gamsFixture(t) {
+  const folder = await fixture(t)
+  const contents = path.join(folder, 'archive/GAMS.app/Contents')
+  await mkdir(path.join(contents, 'MacOS'), { recursive: true })
+  await writeFile(path.join(contents, 'Info.plist'), '<plist/>')
+  await writeFile(path.join(contents, 'MacOS/gams'), '#!/bin/sh\nexit 0\n')
+  await chmod(path.join(contents, 'MacOS/gams'), 0o755)
+  execFileSync('zip', ['-qr', '../gams.zip', 'GAMS.app'], { cwd: path.join(folder, 'archive') })
+  await writeFile(path.join(folder, 'release.json'), JSON.stringify({ assets: [{
+    name: 'GAMS-fixture-macos-aarch64.zip',
+    browser_download_url: 'https://example.invalid/GAMS-fixture-macos-aarch64.zip'
+  }] }))
+  return folder
+}
+
+const gamsArgs = ['UNAME_S=Darwin', 'UNAME_M=arm64', 'GAMS_RELEASE_API=https://example.invalid/release', 'tools/gams.app']
+
+test('GAMS app file target installs the release once and survives clean', async t => {
+  const folder = await gamsFixture(t)
+  make(folder, ...gamsArgs)
+  const executable = path.join(folder, 'tools/gams.app/Contents/MacOS/gams')
+  assert.ok((await stat(executable)).mode & 0o111)
+  assert.equal((await downloads(folder)).length, 2)
+  assert.deepEqual(await readdir(path.join(folder, 'build.nosync')), [])
+  await writeFile(executable, 'local app snapshot')
+  make(folder, ...gamsArgs, 'GAMS_RELEASE_API=https://example.invalid/changed')
+  assert.equal((await downloads(folder)).length, 2)
+  assert.equal(await readFile(executable, 'utf8'), 'local app snapshot')
+  make(folder, 'clean')
+  await stat(executable)
+})
+
+test('GAMS download failures leave no app or staging files and allow retries', async t => {
+  const folder = await gamsFixture(t)
+  const release = await readFile(path.join(folder, 'release.json'))
+  const archive = await readFile(path.join(folder, 'gams.zip'))
+  for (const failure of ['network', 'missing asset', 'invalid archive']) {
+    if (failure === 'network') await writeFile(path.join(folder, 'fail-download'), '')
+    if (failure === 'missing asset') await writeFile(path.join(folder, 'release.json'), '{"assets":[]}')
+    if (failure === 'invalid archive') await writeFile(path.join(folder, 'gams.zip'), 'not a zip')
+    const result = spawnSync('make', ['--no-print-directory', 'CURL=./fake-curl', ...gamsArgs], { cwd: folder, encoding: 'utf8' })
+    assert.notEqual(result.status, 0, failure)
+    await assert.rejects(stat(path.join(folder, 'tools/gams.app')), { code: 'ENOENT' })
+    assert.deepEqual(await readdir(path.join(folder, 'build.nosync')), [])
+    await rm(path.join(folder, 'fail-download'), { force: true })
+    await writeFile(path.join(folder, 'release.json'), release)
+    await writeFile(path.join(folder, 'gams.zip'), archive)
+  }
+  make(folder, ...gamsArgs)
+  await stat(path.join(folder, 'tools/gams.app/Contents/Info.plist'))
+})
+
+test('GAMS download rejects unsupported hosts before making network requests', async t => {
+  const folder = await fixture(t)
+  for (const [system, arch] of [['Linux', 'aarch64'], ['Darwin', 'x86_64']]) {
+    const result = spawnSync('make', ['CURL=./fake-curl', `UNAME_S=${system}`, `UNAME_M=${arch}`, 'tools/gams.app'], { cwd: folder, encoding: 'utf8' })
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /requires macOS Apple Silicon/)
+  }
+  await assert.rejects(stat(path.join(folder, 'downloads.log')), { code: 'ENOENT' })
 })
 
 test('failed downloads leave no partial target and can be retried', async t => {

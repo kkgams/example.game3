@@ -17,7 +17,8 @@ Ownership:
 - SOURCE.json: original source locations/revision and pre-adaptation hashes.
 - game/**/*.glsl.h: generated C shader bindings intentionally kept with source
   for version control. No manual edits; generated with -f sokol for WebGL2/Metal.
-- tools/: ignored downloaded compiler; not build output.
+- tools/: ignored downloaded compiler and optional GAMS Host at gams.app;
+  not build output.
 - build.nosync/: generated binaries, standalone web output and shader-include
   depfiles under shader-deps/.
 
@@ -50,6 +51,15 @@ versions. Downloads use temporary files so failed requests leave no partial targ
 Generated headers are adjacent to shader sources; normal builds handle regeneration
 and include dependencies. make clean removes build metadata as well as binaries,
 preserving tools and headers; the next build restores missing shader depfiles.
+
+Optional Host download: make tools/gams.app queries the latest published release
+of kkgams/gams, selects its macOS Apple Silicon ZIP and installs GAMS.app as
+tools/gams.app. This ordinary directory target has no prerequisites: an existing
+app stays untouched. Download/extraction staging lives under build.nosync/ and is
+removed on success or failure. The target rejects unsupported hosts and malformed
+releases/archives. It does not launch the app or integrate this experiment with
+the Host, and is not required by all/deps or standalone builds. make clean retains
+it; remove the app explicitly to fetch the latest release again.
 
 No source/distribution license approval or publication has been inferred.
 This is an independent Git repository on main with origin

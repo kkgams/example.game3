@@ -1,0 +1,12 @@
+GAMS Project Unit: ui-service.toast
+GAMS-authored code is licensed under Apache-2.0 by owner authorization.
+
+Bounded engineering inventory (not a perfect ownership/provenance assertion):
+- src/ui-plugins/toast.js
+
+No npm dependencies are vendored. Absolute /core/, /util/, /widgets/ libraries
+are supplied separately by the Host and excluded from this ZIP. Textual icon
+ligatures and system font-family names do not bundle icon/font files.
+Sibling Project Units and their licensing remain separate.
+
+NOTICE-EVIDENCE.json SHA-256: c70c7c02d3be72a04ba817cc0f4e60fb18cd7809e962cf457c1cf70849364c3c

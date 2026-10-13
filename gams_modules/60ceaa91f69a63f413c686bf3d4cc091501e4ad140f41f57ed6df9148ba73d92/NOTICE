@@ -1,0 +1,12 @@
+GAMS Project Unit: ui-service.context
+GAMS-authored code is licensed under Apache-2.0 by owner authorization.
+
+Bounded engineering inventory (not a perfect ownership/provenance assertion):
+- src/ui-plugins/context.js
+
+No npm dependencies are vendored. Absolute /core/, /util/, /widgets/ libraries
+are supplied separately by the Host and excluded from this ZIP. Textual icon
+ligatures and system font-family names do not bundle icon/font files.
+Sibling Project Units and their licensing remain separate.
+
+NOTICE-EVIDENCE.json SHA-256: 5997813798bb4cff579a9e950f0fc7b62ef8c9f5156bfed7afa0d12e37b079d9

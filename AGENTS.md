@@ -6,7 +6,7 @@ Keep native and browser builds on the same game/main.c and shader contract.
 Do not edit sibling experiments or the original gams3 checkout.
 Preserve imported Sokol license notices and SOURCE.json original input hashes.
 Binaries and shader include depfiles belong in ignored build.nosync/.
-Downloaded shader tools belong in ignored tools/. Exception: generated *.glsl.h headers
+Downloaded shader tools and the optional GAMS Host app belong in ignored tools/. Exception: generated *.glsl.h headers
 are intentionally version-controlled next to their authored *.glsl sources.
 Sokol headers themselves are the version-controlled snapshot. Dependency file
 targets download only missing files; do not add a lock/checksum/update layer.

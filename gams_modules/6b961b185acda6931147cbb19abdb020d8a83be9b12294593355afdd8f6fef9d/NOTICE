@@ -1,0 +1,12 @@
+GAMS Project Unit: ui-service.layout
+GAMS-authored code is licensed under Apache-2.0 by owner authorization.
+
+Bounded engineering inventory (not a perfect ownership/provenance assertion):
+- src/ui-plugins/layout.js
+
+No npm dependencies are vendored. Absolute /core/, /util/, /widgets/ libraries
+are supplied separately by the Host and excluded from this ZIP. Textual icon
+ligatures and system font-family names do not bundle icon/font files.
+Sibling Project Units and their licensing remain separate.
+
+NOTICE-EVIDENCE.json SHA-256: 43898f29e9f2857b520fca7cecbf4ed8c0fa545386535012a829e5d9a69e37c0

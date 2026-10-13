@@ -1,0 +1,13 @@
+{
+  "entry": "ui-plugins/tooltip.js",
+  "files": {
+    "ui-plugins/tooltip.js": "1622fbc5d8c51fbaff9a9bfb162d8cbdd84f4330d5fb68080819651a668bb3d0"
+  },
+  "host": {
+    "note": "Host source contract targeted; package-level GUI validation remains a release gate.",
+    "target": "2.0.3"
+  },
+  "kind": "ui-service",
+  "name": "ui-service.tooltip",
+  "version": "0.2.0"
+}

@@ -1,0 +1,12 @@
+GAMS Project Unit: ui-service.tooltip
+GAMS-authored code is licensed under Apache-2.0 by owner authorization.
+
+Bounded engineering inventory (not a perfect ownership/provenance assertion):
+- src/ui-plugins/tooltip.js
+
+No npm dependencies are vendored. Absolute /core/, /util/, /widgets/ libraries
+are supplied separately by the Host and excluded from this ZIP. Textual icon
+ligatures and system font-family names do not bundle icon/font files.
+Sibling Project Units and their licensing remain separate.
+
+NOTICE-EVIDENCE.json SHA-256: ab5aea5153eb77d0ac962ab116af0076d85927c9287bfca68e33d43473832d8b
