@@ -1,15 +1,45 @@
 # example.game3 context
 
-First milestone: the owner's gams3/plugins/game C/Sokol triangle, adapted into
-an independent standalone experiment with native macOS/Metal and browser
-WASM/WebGL2 targets. Gameplay and GAMS editor integration are not implemented.
-No gams.json exists yet: this is not currently a loadable external GAMS Project.
+Started from the owner's gams3/plugins/game C/Sokol triangle, adapted into an
+independent experiment with native macOS/Metal and browser WASM/WebGL2 targets.
+Current milestone: a first survivor combat loop in a fixed tilemap arena, using
+shared tilemap/sprite pipelines and procedural textures. Movement, tile collision,
+one chasing enemy type, automatic aimed shots, contact damage, health/kills HUD,
+death and R retry are implemented. XP, upgrades and authored scenarios are not. A minimal gams.json provides
+Files/Code editing and opens in GAMS (owner-verified); the game renderer is not
+embedded in a Host View.
+
+Planned game direction: survivor-style free movement, automatic attacks and XP
+upgrades, authored encounters and a final boss, with title/game/result/credits.
+Decoder and director resources are created using GAMS and are explicitly deferred
+to a separate task; do not port the old generated decoders or director now.
 
 Ownership:
-- game/main.c and triangle-sapp.glsl: shared rendering/input logic.
+- game/main.c: procedural textures, shared keyboard state and simulation/render
+  integration; rendered tiles come from the collision map source.
+- game/sim.{h,c}: platform-independent 120 Hz movement and swept tile collision;
+  normalized diagonal movement, 64 pixels/second, 0.25-second frame-time cap.
+  Also owns bounded enemy/projectile pools, deterministic perimeter spawns,
+  BFS chase routing, nearest-visible auto-fire, swept projectile hits, damage
+  cooldowns, kills and frozen death state. sim_init fully resets a run.
+- game/font.h: small authored 5x7 uppercase/digit HUD glyphs, rasterized into
+  the procedural atlas; no downloaded font or new rendering dependency.
+- game/app.h: shared app callbacks and eight-binding scalar browser key ABI.
+  App frame accepts elapsed seconds. Native uses Sokol duration; browser uses
+  requestAnimationFrame timestamps, resetting its clock/input on focus loss,
+  visibility changes and pause. WASD/arrows remain separate held bindings.
+  Browser retry() translates to the same R key event as native; retry applies
+  only to dead runs and clears held movement and facing.
+- game/render/: C renderer API, instanced tilemap/sprite pipelines and adapted
+  shaders; README.md documents the contract, PROVENANCE.md records original
+  inputs. No external artwork or packed resources.
+- game/triangle-sapp.glsl: retained shader-generation fixture, no longer drawn.
+- gams.json and gams_modules/: minimal Project configuration and installed Units.
 - game/osx/: Sokol native application entry point and Metal implementation.
 - game/web/: freestanding WASM entry point, libc/GL shims, tracked JS bridge,
-  and standalone runner. Input crosses a scalar ABI in framebuffer pixels.
+  and standalone runner. Movement input crosses the scalar key/release ABI;
+  frame time is supplied in seconds. Legacy pointer/layout exports are retained
+  but unused by player movement.
 - game/vendor/: version-control-ready Sokol header snapshots, including official
   sokol_glue.h; embedded licenses preserved. Existing files are never downloaded
   again by ordinary builds.
@@ -22,8 +52,8 @@ Ownership:
 - build.nosync/: generated binaries, standalone web output and shader-include
   depfiles under shader-deps/.
 
-Scope intentionally excludes asset loading, Project Units, copied game1/game2
-code or content, release machinery, and new rendering libraries. The original
+Renderer scope excludes asset loading, decoder/director generation, copied
+game1/game2 code or content, release machinery, and new rendering libraries. The original
 absolute /game/clear-color.rgb dependency is removed for this triangle milestone.
 The JS bridge is taken from gams3's tracked examples/demo/game/web source;
 the original plugins/game Makefile's cmd/browser/util bridge path is absent.
@@ -39,6 +69,14 @@ have explicit prototypes: init_with_gl(void) matches Sokol's void (*)(void);
 the old unspecified-argument definition trapped in ReleaseSafe's function-type
 check. Native compilation enforces -Werror=strict-prototypes. A recipe regression
 runs in make test; the GPU smoke test is separate because it needs a macOS GUI.
+
+Current renderer validation with Zig 0.17.0: make native, make smoke-native,
+web build and make test pass; Chrome/WebGL2 fixture verified visually.
+The native recipe uses -F/System/Library/Frameworks alongside --sysroot:
+Zig prefixes framework search paths with the SDK itself. The earlier absolute
+SDK-prefixed -F path was prefixed twice under Zig 0.17 and failed framework
+lookup; a recipe regression now guards against that duplication. The native
+smoke test draws three Metal frames and shuts down successfully.
 
 Dependency policy: the files themselves are the snapshot. Each Sokol header
 and the host's shader compiler is an ordinary Make target with no prerequisites.

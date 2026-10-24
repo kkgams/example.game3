@@ -10,5 +10,7 @@ test('native recipe passes the SDK with Zig driver options', () => {
   assert.match(recipe, /xcrun --sdk macosx --show-sdk-path/)
   assert.match(recipe, /--sysroot "\$SDK"/)
   assert.doesNotMatch(recipe, /-isysroot/)
+  assert.match(recipe, /-F\/System\/Library\/Frameworks(?:\s|$)/)
+  assert.doesNotMatch(recipe, /-F"?\$SDK/, 'Zig prefixes framework search paths with sysroot itself')
   assert.match(recipe, /-cflags -Werror=strict-prototypes --/)
 })

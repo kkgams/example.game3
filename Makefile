@@ -29,7 +29,8 @@ SHADER_HEADERS := $(addsuffix .h,$(SHADER_SOURCES))
 SHADER_DEPS_DIR := $(BUILD)/shader-deps
 SHADER_DEPFILES := $(addprefix $(SHADER_DEPS_DIR)/,$(addsuffix .d,$(SHADER_SOURCES)))
 SHADERS_MISSING_DEPS := $(patsubst $(SHADER_DEPS_DIR)/%.d,%.h,$(filter-out $(wildcard $(SHADER_DEPFILES)),$(SHADER_DEPFILES)))
-COMMON := game/main.c $(SHADER_HEADERS) $(SOKOL_HEADERS)
+GAME_SOURCES := game/main.c game/sim.c game/render/render2d.c
+COMMON := $(GAME_SOURCES) game/app.h game/sim.h game/font.h game/render/render2d.h $(SHADER_HEADERS) $(SOKOL_HEADERS)
 WEB_HEADERS := $(shell find game/web/wasm-include -type f)
 
 .PHONY: all deps sokol sokol-shdc native web run play serve test smoke-native clean shaders
@@ -90,14 +91,14 @@ $(BUILD)/triangle: Makefile $(COMMON) game/osx/main.c game/osx/sokol_impl.m
 	@mkdir -p $(BUILD)
 	@SDK=$$(xcrun --sdk macosx --show-sdk-path) && \
 	$(ZIG) build-exe -cflags -Werror=strict-prototypes -- \
-		game/osx/sokol_impl.m game/osx/main.c game/main.c \
-		-lc -O ReleaseSafe --sysroot "$$SDK" -F"$$SDK/System/Library/Frameworks" \
+		game/osx/sokol_impl.m game/osx/main.c $(GAME_SOURCES) \
+		-lc -O ReleaseSafe --sysroot "$$SDK" -F/System/Library/Frameworks \
 		-framework Metal -framework MetalKit -framework Cocoa \
 		-framework QuartzCore -framework Foundation -femit-bin=$@
 
 $(BUILD)/web/triangle.wasm: Makefile $(COMMON) game/web/main.c $(WEB_HEADERS)
 	@mkdir -p $(BUILD)/web
-	$(ZIG) build-exe game/web/main.c game/main.c -target wasm32-freestanding \
+	$(ZIG) build-exe game/web/main.c $(GAME_SOURCES) -target wasm32-freestanding \
 		-fno-entry -rdynamic -O ReleaseSafe -I game/web/wasm-include -femit-bin=$@
 
 $(BUILD)/web/%: game/web/%

@@ -10,6 +10,12 @@ let gl = null
 let raf = 0
 let paused = false
 let frames = 0
+let lastTime = null
+
+function releaseInput() {
+  lastTime = null
+  if (instance !== null) instance.exports.release_keys()
+}
 
 function resize() {
   const scale = Math.min(window.devicePixelRatio, 4)
@@ -27,10 +33,12 @@ function fail(error) {
   console.error(error)
 }
 
-function tick() {
+function tick(now) {
   try {
     if (!paused) {
-      instance.exports.frame()
+      const elapsed = lastTime === null ? 0 : (now - lastTime) / 1000
+      lastTime = now
+      instance.exports.frame(elapsed)
       frames++
       canvas.dataset.frames = String(frames)
     }
@@ -75,17 +83,22 @@ async function boot() {
   pauseButton.textContent = 'Pause'
   pauseButton.disabled = false
   reloadButton.disabled = false
-  status.textContent = 'Move the pointer vertically to rotate'
+  status.textContent = 'WASD / arrows: move. Auto fire. Avoid red enemies. R: retry after death.'
   document.body.dataset.state = 'ready'
-  tick()
+  lastTime = null
+  canvas.focus({ preventScroll: true })
+  raf = requestAnimationFrame(tick)
 }
 
 pauseButton.addEventListener('click', () => {
   paused = !paused
+  releaseInput()
+  if (!paused) canvas.focus({ preventScroll: true })
   pauseButton.textContent = paused ? 'Resume' : 'Pause'
 })
 reloadButton.addEventListener('click', async () => {
   cancelAnimationFrame(raf)
+  releaseInput()
   try {
     instance.exports.cleanup()
     instance = null
@@ -94,14 +107,41 @@ reloadButton.addEventListener('click', async () => {
     fail(error)
   }
 })
-canvas.addEventListener('pointermove', (event) => {
-  if (instance === null) return // Input before loading is expected.
-  const bounds = canvas.getBoundingClientRect()
-  instance.exports.mouse_move(
-    (event.clientX - bounds.left) * canvas.width / bounds.width,
-    (event.clientY - bounds.top) * canvas.height / bounds.height,
-  )
+// Physical keys match game/app.h's stable scalar ABI, not browser keyCodes.
+const movementKeys = new Map([
+  ['KeyW', 0], ['KeyA', 1], ['KeyS', 2], ['KeyD', 3],
+  ['ArrowUp', 4], ['ArrowLeft', 5], ['ArrowDown', 6], ['ArrowRight', 7],
+])
+function shortcutModifier(event) {
+  return event.ctrlKey || event.metaKey || event.altKey ||
+    ['MetaLeft', 'MetaRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight'].includes(event.code)
+}
+window.addEventListener('keydown', (event) => {
+  if (instance === null) return
+  // macOS may omit a movement key's keyup while Command is held. Never
+  // retain movement across shortcut modifiers, including their release.
+  if (shortcutModifier(event)) { releaseInput(); return }
+  if (paused || document.hidden || document.activeElement !== canvas) return
+  if (event.code === 'KeyR') {
+    event.preventDefault()
+    if (!event.repeat) { releaseInput(); instance.exports.retry() }
+    return
+  }
+  if (!movementKeys.has(event.code)) return
+  event.preventDefault()
+  instance.exports.key(movementKeys.get(event.code), 1)
 })
+window.addEventListener('keyup', (event) => {
+  if (instance === null) return
+  if (shortcutModifier(event)) { releaseInput(); return }
+  if (!movementKeys.has(event.code)) return
+  instance.exports.key(movementKeys.get(event.code), 0)
+  if (document.activeElement === canvas) event.preventDefault()
+})
+canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }))
+canvas.addEventListener('blur', releaseInput)
+window.addEventListener('blur', releaseInput)
+document.addEventListener('visibilitychange', releaseInput)
 canvas.addEventListener('webglcontextlost', (event) => {
   event.preventDefault()
   fail(new Error('WebGL context lost; refresh the page'))

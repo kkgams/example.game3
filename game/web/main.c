@@ -8,16 +8,11 @@
 #include <GLES3/gl3.h>
 #include <gl_funcs.h>
 
-#include "../vendor/sokol_app.h"
+#include "../app.h"
+#include <assert.h>
 
 #define SOKOL_IMPL
 #include "../vendor/sokol_gfx.h"
-
-// App functions from main.c
-void init(void);
-void frame(void);
-void cleanup(void);
-void event(const sapp_event *e);
 
 // Custom minimal logger for freestanding WASM (no sokol_log.h)
 void slog_func(const char *tag, uint32_t log_level, uint32_t log_item,
@@ -69,8 +64,8 @@ platform_init(void) {
 
 // Platform frame - calls app frame, exports as "frame" to JS
 __attribute__((visibility("default"), export_name("frame"))) void
-platform_frame(void) {
-  frame(); // App frame from main.c
+platform_frame(double elapsed) {
+  frame(elapsed); // Seconds supplied by requestAnimationFrame, shared simulation.
 }
 
 // Platform cleanup - calls app cleanup, exports as "cleanup" to JS
@@ -88,6 +83,29 @@ __attribute__((export_name("resize"))) void platform_resize(int width, int heigh
 
 __attribute__((export_name("mouse_move"))) void platform_mouse_move(float x, float y) {
   sapp_event e = {.type = SAPP_EVENTTYPE_MOUSE_MOVE, .mouse_x = x, .mouse_y = y};
+  event(&e);
+}
+
+// Browser physical-key ABI. Keep WASD and arrows independent so releasing
+// one binding cannot cancel a different held binding of the same direction.
+__attribute__((export_name("key"))) void platform_key(int key, int down) {
+  const sapp_keycode codes[GAME_KEY_COUNT] = {
+    SAPP_KEYCODE_W, SAPP_KEYCODE_A, SAPP_KEYCODE_S, SAPP_KEYCODE_D,
+    SAPP_KEYCODE_UP, SAPP_KEYCODE_LEFT, SAPP_KEYCODE_DOWN, SAPP_KEYCODE_RIGHT,
+  };
+  assert(key >= 0 && key < GAME_KEY_COUNT && (down == 0 || down == 1));
+  sapp_event e = {.type = down ? SAPP_EVENTTYPE_KEY_DOWN : SAPP_EVENTTYPE_KEY_UP,
+                  .key_code = codes[key]};
+  event(&e);
+}
+
+__attribute__((export_name("release_keys"))) void platform_release_keys(void) {
+  sapp_event e = {.type = SAPP_EVENTTYPE_UNFOCUSED};
+  event(&e);
+}
+
+__attribute__((export_name("retry"))) void platform_retry(void) {
+  sapp_event e = {.type = SAPP_EVENTTYPE_KEY_DOWN, .key_code = SAPP_KEYCODE_R};
   event(&e);
 }
 
