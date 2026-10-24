@@ -15,6 +15,10 @@
 
 #define SIM_MAX_ENEMIES 16
 #define SIM_MAX_BULLETS 32
+#define SIM_MAX_HOSTILE_BULLETS 32
+#define SIM_WAVE_TICKS (30u * 120u)
+#define SIM_BOSS_TICKS (3u * SIM_WAVE_TICKS)
+#define SIM_BOSS_HP 120
 #define SIM_MAX_HP 3
 #define SIM_MAX_GEMS 64
 #define SIM_GEM_HALF 2.0f
@@ -30,7 +34,14 @@
 
 enum { SIM_UPGRADE_DAMAGE, SIM_UPGRADE_ATTACK, SIM_UPGRADE_SPEED, SIM_UPGRADE_COUNT };
 typedef struct { float x, y; int value; bool active; } sim_gem;
-typedef struct { float x, y; int hp; bool active; } sim_enemy;
+typedef enum { SIM_CHASER, SIM_RUNNER, SIM_BRUTE, SIM_BOSS, SIM_ENEMY_KIND_COUNT } sim_enemy_kind;
+typedef struct {
+    float x, y;
+    int hp;
+    bool active;
+    sim_enemy_kind kind;
+    int attack_ticks;
+} sim_enemy;
 typedef struct {
     float x, y, vx, vy;
     int ticks_left;
@@ -40,7 +51,7 @@ typedef struct {
     float x, y;
     double accumulator;
     int hp, kills;
-    bool dead;
+    bool dead, won, boss_started;
     unsigned ticks;
     int shot_ticks, spawn_ticks, hurt_ticks;
     int level, xp, xp_next, damage, shot_interval;
@@ -49,6 +60,7 @@ typedef struct {
     sim_gem gems[SIM_MAX_GEMS];
     sim_enemy enemies[SIM_MAX_ENEMIES];
     sim_bullet bullets[SIM_MAX_BULLETS];
+    sim_bullet hostile_bullets[SIM_MAX_HOSTILE_BULLETS];
 } sim_state;
 typedef struct { int x, y; } sim_input;
 
@@ -56,6 +68,9 @@ typedef struct { int x, y; } sim_input;
 bool sim_solid(int x, int y);
 uint8_t sim_tile(int x, int y);
 void sim_init(sim_state *state);
+/* Waves 1..3 last 30 seconds each; 4 denotes the final boss duel. Clock ticks
+   advance only during active play (never choices, death or victory). */
+int sim_wave(const sim_state *state);
 /* False outside a level-up or for a capped attack-rate option. Invalid option
    indices assert. Each accepted choice consumes one threshold, preserves excess
    XP and queues another choice if needed; no elapsed time is carried across. */

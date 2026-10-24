@@ -83,7 +83,7 @@ async function boot() {
   pauseButton.textContent = 'Pause'
   pauseButton.disabled = false
   reloadButton.disabled = false
-  status.textContent = 'WASD / arrows: move. Auto fire. Avoid red enemies. 1 / 2 / 3: upgrade. R: retry after death.'
+  status.textContent = 'WASD / arrows: move. Auto fire. Survive the waves and defeat the boss. 1 / 2 / 3: upgrade. R: restart after win or loss.'
   document.body.dataset.state = 'ready'
   lastTime = null
   canvas.focus({ preventScroll: true })

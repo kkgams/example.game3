@@ -216,12 +216,12 @@ static void spawning(void) {
     ticks(&a, 1);
     assert(enemies(&a) == 1 && a.enemies[0].x > -90 && a.hp == 3);
     a = fixture(); a.spawn_ticks = 1; a.shot_ticks = 1000000;
-    a.enemies[0] = (sim_enemy){-104, -56, 2, true};
+    a.enemies[0] = (sim_enemy){.x = -104, .y = -56, .hp = 2, .active = true, .kind = SIM_CHASER};
     ticks(&a, 1);
     assert(enemies(&a) == 2 && a.enemies[1].x > -90);
     a = fixture(); a.spawn_ticks = 1; a.shot_ticks = 1000000;
     for (int i = 0; i < SIM_MAX_ENEMIES; ++i)
-        a.enemies[i] = (sim_enemy){80, 40, 2, true};
+        a.enemies[i] = (sim_enemy){.x = 80, .y = 40, .hp = 2, .active = true, .kind = SIM_CHASER};
     ticks(&a, 1);
     assert(enemies(&a) == SIM_MAX_ENEMIES && a.spawn_ticks == SIM_SPAWN_TICKS);
 }
@@ -231,10 +231,10 @@ static void chase_obstacle(void) {
         s.shot_ticks = s.hurt_ticks = 1000000;
         if (dir < 2) {
             s.x = dir ? 72 : -72; s.y = 8;
-            s.enemies[0] = (sim_enemy){-s.x, 8, 2, true};
+            s.enemies[0] = (sim_enemy){.x = -s.x, .y = 8, .hp = 2, .active = true, .kind = SIM_CHASER};
         } else {
             s.x = 8; s.y = dir == 2 ? -40 : 40;
-            s.enemies[0] = (sim_enemy){8, -s.y, 2, true};
+            s.enemies[0] = (sim_enemy){.x = 8, .y = -s.y, .hp = 2, .active = true, .kind = SIM_CHASER};
         }
         bool detour = false;
         for (int i = 0; i < 1200; ++i) {
@@ -255,14 +255,14 @@ static void targeting(void) {
     sim_state s = fixture();
     ticks(&s, 1);
     assert(bullets(&s) == 0 && s.shot_ticks == 0);
-    s.enemies[0] = (sim_enemy){80, 0, 2, true};
+    s.enemies[0] = (sim_enemy){.x = 80, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
     ticks(&s, 1);
     assert(bullets(&s) == 0); /* Outside range. */
-    s.enemies[0] = (sim_enemy){24, 0, 2, true};
+    s.enemies[0] = (sim_enemy){.x = 24, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
     ticks(&s, 1);
     assert(bullets(&s) == 0); /* Central wall hides enemy. */
-    s.enemies[1] = (sim_enemy){-80, 48, 2, true};
-    s.enemies[2] = (sim_enemy){-48, 0, 2, true};
+    s.enemies[1] = (sim_enemy){.x = -80, .y = 48, .hp = 2, .active = true, .kind = SIM_CHASER};
+    s.enemies[2] = (sim_enemy){.x = -48, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
     ticks(&s, 1);
     assert(bullets(&s) == 1 && s.shot_ticks == SIM_SHOT_TICKS);
     assert(s.bullets[0].vx > 159);
@@ -274,14 +274,14 @@ static void targeting(void) {
     ticks(&s, 1);
     assert(s.shot_ticks == SIM_SHOT_TICKS);
     s = fixture(); s.x = -24;
-    s.enemies[0] = (sim_enemy){24, 0, 2, true};
-    s.enemies[1] = (sim_enemy){-96, 0, 2, true};
+    s.enemies[0] = (sim_enemy){.x = 24, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
+    s.enemies[1] = (sim_enemy){.x = -96, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
     ticks(&s, 1);
     assert(s.bullets[0].active && s.bullets[0].vx < -159);
 }
 static void hits_and_lifetime(void) {
     sim_state s = fixture();
-    s.enemies[0] = (sim_enemy){-48, 0, 2, true};
+    s.enemies[0] = (sim_enemy){.x = -48, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
     ticks(&s, 35);
     assert(s.enemies[0].hp == 1 && s.kills == 0);
     ticks(&s, 70);
@@ -289,19 +289,19 @@ static void hits_and_lifetime(void) {
     ticks(&s, 300);
     assert(s.kills == 1 && bullets(&s) == 0);
     s = fixture(); s.shot_ticks = 1000000;
-    s.enemies[0] = (sim_enemy){-48, 0, 1, true};
+    s.enemies[0] = (sim_enemy){.x = -48, .y = 0, .hp = 1, .active = true, .kind = SIM_CHASER};
     for (int i = 0; i < 2; ++i)
         s.bullets[i] = (sim_bullet){-48, 0, 0, 0, 240, true};
     ticks(&s, 1);
     assert(s.kills == 1 && !s.enemies[0].active);
     assert(!s.bullets[0].active && s.bullets[1].active);
     s = fixture(); s.shot_ticks = 1000000;
-    s.enemies[0] = (sim_enemy){-48, 0, 2, true};
+    s.enemies[0] = (sim_enemy){.x = -48, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
     s.bullets[0] = (sim_bullet){-96, 0, 12000, 0, 240, true};
     ticks(&s, 1); /* Extreme speed proves sweep cannot tunnel. */
     assert(s.enemies[0].hp == 1 && !s.bullets[0].active);
     s = fixture(); s.shot_ticks = 1000000;
-    s.enemies[0] = (sim_enemy){40, 0, 2, true};
+    s.enemies[0] = (sim_enemy){.x = 40, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
     s.bullets[0] = (sim_bullet){-40, 0, 12000, 0, 240, true};
     ticks(&s, 1);
     assert(!s.bullets[0].active && s.enemies[0].hp == 2);
@@ -321,7 +321,7 @@ static void hits_and_lifetime(void) {
 
 static void saturation_and_death(void) {
     sim_state s = fixture();
-    s.enemies[0] = (sim_enemy){-48, 0, 2, true};
+    s.enemies[0] = (sim_enemy){.x = -48, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
     for (int i = 0; i < SIM_MAX_BULLETS; ++i)
         s.bullets[i] = (sim_bullet){-104, 48, 0, 0, 240, true};
     ticks(&s, 1);
@@ -330,7 +330,7 @@ static void saturation_and_death(void) {
     ticks(&s, 1);
     assert(bullets(&s) == SIM_MAX_BULLETS && s.shot_ticks == SIM_SHOT_TICKS);
     s = fixture(); s.shot_ticks = 1000000;
-    s.enemies[0] = (sim_enemy){s.x, s.y, 2, true};
+    s.enemies[0] = (sim_enemy){.x = s.x, .y = s.y, .hp = 2, .active = true, .kind = SIM_CHASER};
     s.enemies[1] = s.enemies[0];
     ticks(&s, 1);
     assert(s.hp == 2 && s.hurt_ticks == SIM_HURT_TICKS && !s.dead);
@@ -400,7 +400,7 @@ static void progression(void) {
     assert(s.damage == 1 && s.shot_interval == SIM_SHOT_TICKS && s.move_speed == SIM_SPEED);
     assert(!sim_choose_upgrade(&s, SIM_UPGRADE_DAMAGE));
     s.shot_ticks = 1000000;
-    s.enemies[0] = (sim_enemy){-48, 0, 1, true};
+    s.enemies[0] = (sim_enemy){.x = -48, .y = 0, .hp = 1, .active = true, .kind = SIM_CHASER};
     s.bullets[0] = (sim_bullet){-48, 0, 0, 0, 240, true};
     ticks(&s, 1);
     assert(s.kills == 1 && s.xp == 0 && gem_value(&s) == 1);
@@ -423,7 +423,7 @@ static void progression(void) {
     assert(sim_choose_upgrade(&s, SIM_UPGRADE_DAMAGE));
     assert(!s.choosing && s.level == 2 && s.xp == 2 && s.xp_next == 5 && s.damage == 2);
     assert(!sim_choose_upgrade(&s, SIM_UPGRADE_SPEED)); /* No double choice. */
-    s.enemies[0] = (sim_enemy){-48, 0, 2, true};
+    s.enemies[0] = (sim_enemy){.x = -48, .y = 0, .hp = 2, .active = true, .kind = SIM_CHASER};
     s.bullets[0] = (sim_bullet){-48, 0, 0, 0, 240, true};
     s.shot_ticks = 1000000;
     ticks(&s, 1);
@@ -431,7 +431,7 @@ static void progression(void) {
 
     s = fixture(); s.xp = 3; s.choosing = true;
     assert(sim_choose_upgrade(&s, SIM_UPGRADE_ATTACK));
-    s.enemies[0] = (sim_enemy){-48, 0, 100, true};
+    s.enemies[0] = (sim_enemy){.x = -48, .y = 0, .hp = 100, .active = true, .kind = SIM_CHASER};
     s.hurt_ticks = 1000000;
     ticks(&s, 1);
     assert(s.shot_ticks == 54);
@@ -465,7 +465,7 @@ static void progression(void) {
     s = fixture(); s.shot_ticks = 1000000;
     for (int i = 0; i < SIM_MAX_GEMS; ++i)
         s.gems[i] = (sim_gem){-104, 48, 1, true};
-    s.enemies[0] = (sim_enemy){-48, 0, 1, true};
+    s.enemies[0] = (sim_enemy){.x = -48, .y = 0, .hp = 1, .active = true, .kind = SIM_CHASER};
     s.bullets[0] = (sim_bullet){-48, 0, 0, 0, 240, true};
     ticks(&s, 1);
     assert(gem_value(&s) == SIM_MAX_GEMS + 1 && s.xp == 0); /* Full pool merges, no lost XP. */

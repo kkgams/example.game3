@@ -4,9 +4,9 @@ Started from the owner's gams3/plugins/game C/Sokol triangle, adapted into an
 independent experiment with native macOS/Metal and browser WASM/WebGL2 targets.
 Current milestone: a first survivor combat loop in a fixed tilemap arena, using
 shared tilemap/sprite pipelines and procedural textures. Movement, tile collision,
-one chasing enemy type, automatic aimed shots, contact damage, XP gems,
-health/kills/level/XP HUD, paused level-up choices, death and R retry are
-implemented. Authored scenarios and additional skills are not. A minimal gams.json provides
+three enemy archetypes, automatic aimed shots, contact damage, XP gems,
+health/kills/level/XP/timer HUD, paused level-up choices, a three-wave 90-second
+countdown, a two-phase final boss, win/loss and R restart are implemented. Authored scenarios and additional skills are not. A minimal gams.json provides
 Files/Code editing and opens in GAMS (owner-verified); the game renderer is not
 embedded in a Host View.
 
@@ -27,6 +27,12 @@ Ownership:
   threshold is 3, rising by 2 per level; surplus XP queues distinct choices.
   sim_choose_upgrade accepts damage, attack-rate or movement-speed choices;
   capped attack rate consumes nothing. sim_init fully resets the run and stats.
+  Enemy kinds are chaser, runner, brute and boss. Waves change every 30 active
+  seconds; at 90 seconds the arena clears for a guaranteed boss, with no regular
+  spawns afterward. Boss HP is 120 and its hard-coded eight-shot ring speeds up
+  at half health. A separate 32-shot hostile pool prevents weapon starvation.
+  Boss death sets won, clears threats and freezes the world before hostile hits;
+  both won and dead require a full restart. The run clock pauses for choices.
 - game/font.h: small authored 5x7 uppercase/digit HUD glyphs, rasterized into
   the procedural atlas; no downloaded font or new rendering dependency.
 - game/app.h: shared app callbacks and eight-binding scalar browser key ABI.
@@ -34,7 +40,7 @@ Ownership:
   requestAnimationFrame timestamps, resetting its clock/input on focus loss,
   visibility changes and pause. WASD/arrows remain separate held bindings.
   Browser retry() translates to the same R key event as native; retry applies
-  only to dead runs and clears held movement and facing. choose_upgrade(0..2)
+  only to won/dead runs and clears held movement and facing. choose_upgrade(0..2)
   translates to the same top-row 1/2/3 events as native; accepted choices clear
   held movement and paused frame-time debt. Key repeats cannot consume choices.
 - game/render/: C renderer API, instanced tilemap/sprite pipelines and adapted
@@ -50,7 +56,10 @@ Ownership:
 - game/vendor/: version-control-ready Sokol header snapshots, including official
   sokol_glue.h; embedded licenses preserved. Existing files are never downloaded
   again by ordinary builds.
-- Makefile and test/: independent build and WASM/JS ABI verification.
+- Makefile and test/: independent build and WASM/JS ABI verification, including
+  timed-run regression tests. test/scene.c includes the real app in a separate
+  test-only WASM for staged wave/boss/victory render checks; the production
+  binary has no test-stage exports. Generated fixtures stay in build.nosync/.
 - SOURCE.json: original source locations/revision and pre-adaptation hashes.
 - game/**/*.glsl.h: generated C shader bindings intentionally kept with source
   for version control. No manual edits; generated with -f sokol for WebGL2/Metal.

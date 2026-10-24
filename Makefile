@@ -101,6 +101,12 @@ $(BUILD)/web/triangle.wasm: Makefile $(COMMON) game/web/main.c $(WEB_HEADERS)
 	$(ZIG) build-exe game/web/main.c $(GAME_SOURCES) -target wasm32-freestanding \
 		-fno-entry -rdynamic -O ReleaseSafe -I game/web/wasm-include -femit-bin=$@
 
+# Test-only app staging hooks are compiled into a separate WASM, never the game.
+$(BUILD)/test/scene.wasm: Makefile $(COMMON) game/web/main.c test/scene.c $(WEB_HEADERS)
+	@mkdir -p $(BUILD)/test
+	$(ZIG) build-exe game/web/main.c test/scene.c game/sim.c game/render/render2d.c -target wasm32-freestanding \
+		-fno-entry -rdynamic -O ReleaseSafe -I game/web/wasm-include -femit-bin=$@
+
 $(BUILD)/web/%: game/web/%
 	@mkdir -p $(BUILD)/web
 	cp $< $@
@@ -114,7 +120,7 @@ smoke-native: native
 play serve: web
 	$(PYTHON) -m http.server $(PORT) --bind 127.0.0.1 --directory $(BUILD)/web
 
-test: web
+test: web $(BUILD)/test/scene.wasm
 	node --test test/*.test.mjs
 
 # Retain downloaded tools and committed/generated shader headers.

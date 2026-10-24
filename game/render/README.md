@@ -80,16 +80,19 @@ tint by its fourth component. Strength 0 leaves source RGB unchanged.
 The original tile area occupies the first 32x32 texels; tilemap instances use
 that atlas subrectangle to preserve tile IDs. Extra cells hold an enemy, bullet,
 health pip, XP gem, bar segment, dark panel tile and authored 5x7 bitmap glyphs.
-All game objects, XP bar, HUD text and level-up panel share one sprite batch,
-with HUD/panel submitted last. The lookup texture is built from
+Unused cells at atlas Y=48 hold runner, brute, boss and hostile-shot silhouettes;
+font glyphs occupy Y<40, so the regions do not overlap.
+All game objects, XP/boss bars, timer/wave HUD and level-up panel share one sprite
+batch, with HUD/panel submitted last. Win/loss rendering disables damage blinking
+so a frozen result cannot leave the player faded. The lookup texture is built from
 `sim_tile`, the same hand-authored source used by collision. The combat arena
 replaces the earlier flips/opacity/tint gallery; those features remain available. No packed resources, external art or generated GAMS
 models are required.
 
 `make test` checks shader generation and real WASM submission through a mock GPU,
 including integer attributes, upload sizes, projection, movement input, a full
-combat/XP/choice/death/retry run, minimize, cleanup and reinitialization. Separate C tests
-cover movement/collision, combat and progression; runner tests cover browser
+combat/XP/choice/death/retry run and a separate staged wave/boss/win fixture, minimize, cleanup and reinitialization. Separate C tests
+cover movement/collision, combat, progression and complete run flow; runner tests cover browser
 keys, upgrade choices, retry,
 clock and focus/pause lifecycle. These do not
 prove shader pixels. Chrome visual/movement checks and a three-frame real Metal

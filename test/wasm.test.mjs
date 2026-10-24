@@ -11,6 +11,7 @@ test('WASM imports and exports match the standalone runner', () => {
   for (const name of ['memory', 'init', 'frame', 'cleanup', 'resize', 'key', 'release_keys', 'retry', 'choose_upgrade']) {
     assert.ok(exports.has(name), `missing export ${name}`)
   }
+  for (const name of exports) assert.ok(!name.startsWith('test_'), 'production WASM excludes scene staging hooks')
   const imports = new GLBridge({}, null).createImportObject()
   for (const entry of WebAssembly.Module.imports(module)) {
     assert.equal(entry.module, 'env')
@@ -51,20 +52,21 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   })
   const bridge = new GLBridge(gl, null)
   let width = 640, height = 480
-  const instance = await WebAssembly.instantiate(module, { env: {
+  const env = {
     ...bridge.createImportObject(),
     js_canvas_width: () => width,
     js_canvas_height: () => height,
     js_webgl_framebuffer: () => 0,
     game_log: (level, pointer, item) => assert.ok(level > 2, `Sokol error/warning ${item} at ${pointer}`),
-  } })
+  }
+  const instance = await WebAssembly.instantiate(module, {env})
   bridge.memory = instance.exports.memory
   instance.exports.init()
   instance.exports.resize(width, height)
   instance.exports.frame(0)
   const draws = calls.filter(c => c[0] === 'drawElementsInstanced')
   assert.equal(draws.length, 2, 'tilemap batch and player/HUD sprite batch')
-  assert.deepEqual(draws.map(c => [c[2], c[5]]), [[6, 2], [6, 45]])
+  assert.deepEqual(draws.map(c => [c[2], c[5]]), [[6, 2], [6, 56]])
   const uniforms = calls.filter(c => c[0] === 'uniform4fv')
   assert.equal(uniforms.length, 2)
   assert.ok(Math.abs(uniforms[0][2][0] - 2 / 320) < 0.00001, 'pixel-space projection')
@@ -80,7 +82,7 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   assert.ok(calls.some(c => c[0] === 'vertexAttribIPointer' && c[2] === 2 && c[3] === constants.INT && c[4] === 60 && c[5] === 52))
   assert.ok(calls.some(c => c[0] === 'vertexAttribDivisor' && c[2] === 1))
   const uploads = calls.filter(c => c[0] === 'bufferSubData').slice(-2)
-  assert.deepEqual(uploads.map(c => c[3].length), [2 * 64, 45 * 60])
+  assert.deepEqual(uploads.map(c => c[3].length), [2 * 64, 56 * 60])
   function player() {
     const upload = calls.filter(c => c[0] === 'bufferSubData').at(-1)
     const view = new DataView(Uint8Array.from(upload[3]).buffer)
@@ -148,7 +150,7 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
     for (let offset = 0; offset < view.byteLength; offset += 60) {
       const u = view.getFloat32(offset + 20, true), v = view.getFloat32(offset + 24, true)
-      if (u < .5) continue
+      if (u < .5 || v >= .625) continue
       text += alphabet[Math.round((u * 128 - 64) / 8) + 8 * Math.round(v * 64 / 8)]
     }
     return text
@@ -182,7 +184,7 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   assert.ok(sawGem, 'XP gems are rendered')
   assert.ok(sawLevel, 'collected XP presents an upgrade choice')
   assert.ok(died, 'idle player eventually loses to incoming enemies')
-  assert.match(hudText(), /^HPKILLS[1-9][0-9]*LV[2-9][0-9]*XP[0-9]+OF[0-9]+YOUDIEDRRETRY$/, 'level, XP, kills and retry result are visible')
+  assert.match(hudText(), /^TIME[0-9]+HPKILLS[1-9][0-9]*LV[2-9][0-9]*XP[0-9]+OF[0-9]+YOUDIEDRRETRY$/, 'level, XP, kills and retry result are visible')
   const deadPlayer = player(), deadHud = hudText()
   instance.exports.key(3, 1)
   instance.exports.frame(.25)
@@ -191,9 +193,53 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   instance.exports.retry()
   instance.exports.frame(0)
   assert.deepEqual(player(), start, 'R retry resets position, facing and held keys')
-  assert.equal(hudText(), 'HPKILLS0LV1XP0OF3AUTOFIRE')
+  assert.equal(hudText(), 'TIME90HPKILLS0LV1XP0OF3WAVE1AUTOFIRE')
   instance.exports.frame(.25)
   assert.deepEqual(player(), start, 'retry releases movement held at death')
   instance.exports.cleanup()
+  assert.equal(bridge.programs.size, 0)
+
+  // The separate fixture stages the real app near transitions without giving
+  // production a cheat ABI or waiting 90 real seconds to check render wiring.
+  const fixtureBytes = await readFile(new URL('../build.nosync/test/scene.wasm', import.meta.url))
+  const scene = await WebAssembly.instantiate(await WebAssembly.compile(fixtureBytes), {env})
+  bridge.memory = scene.exports.memory
+  scene.exports.init()
+  function hasSprite(u, v) {
+    const data = spriteUpload()
+    for (let offset = 0; offset < data.byteLength; offset += 60)
+      if (data.getFloat32(offset + 20, true) === u && data.getFloat32(offset + 24, true) === v) return true
+    return false
+  }
+  scene.exports.test_wave(2)
+  assert.ok(hasSprite(.5, .75), 'runner silhouette reaches GPU')
+  assert.match(hudText(), /^TIME60.*WAVE2AUTOFIRE$/)
+  scene.exports.test_wave(3)
+  assert.ok(hasSprite(.625, .75), 'brute silhouette reaches GPU')
+  assert.match(hudText(), /^TIME30.*WAVE3AUTOFIRE$/)
+  scene.exports.test_boss()
+  assert.ok(hasSprite(.75, .75), 'boss silhouette reaches GPU')
+  assert.match(hudText(), /^TIME0.*BOSS120OF120DEFEATTHEBOSS$/)
+  for (let i = 0; i < 8; ++i) scene.exports.frame(.25)
+  assert.ok(hasSprite(.875, .75), 'hostile ring projectiles reach GPU')
+  scene.exports.test_enrage()
+  assert.match(hudText(), /BOSS60OF120DEFEATTHEBOSS$/)
+  scene.exports.test_win()
+  assert.match(hudText(), /^TIME0.*YOUWINRRETRY$/)
+  const victory = calls.findLast(c => c[0] === 'bufferSubData')[3]
+  scene.exports.key(3, 1)
+  scene.exports.frame(.25)
+  assert.deepEqual(calls.findLast(c => c[0] === 'bufferSubData')[3], victory, 'victory freezes world, clock and facing')
+  scene.exports.retry()
+  scene.exports.frame(0)
+  assert.equal(hudText(), 'TIME90HPKILLS0LV1XP0OF3WAVE1AUTOFIRE')
+  assert.deepEqual(player(), start, 'victory retry resets the run')
+  scene.exports.test_boss()
+  scene.exports.test_loss()
+  assert.match(hudText(), /YOUDIEDRRETRY$/)
+  scene.exports.retry()
+  scene.exports.frame(0)
+  assert.equal(hudText(), 'TIME90HPKILLS0LV1XP0OF3WAVE1AUTOFIRE')
+  scene.exports.cleanup()
   assert.equal(bridge.programs.size, 0)
 })

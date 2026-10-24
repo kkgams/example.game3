@@ -24,9 +24,21 @@ void sim_init(sim_state *state) {
         .shot_interval = SIM_SHOT_TICKS, .move_speed = SIM_SPEED };
 }
 
+int sim_wave(const sim_state *state) {
+    assert(state);
+    return state->boss_started ? 4 : 1 + (int)(state->ticks / SIM_WAVE_TICKS);
+}
+
+static int spawn_interval(const sim_state *state) {
+    const int intervals[] = {90, 75, 60};
+    int wave = sim_wave(state);
+    assert(wave >= 1 && wave <= 3);
+    return intervals[wave - 1];
+}
+
 bool sim_choose_upgrade(sim_state *state, int option) {
     assert(state && option >= 0 && option < SIM_UPGRADE_COUNT);
-    if (state->dead || !state->choosing) return false;
+    if (state->dead || state->won || !state->choosing) return false;
     if (option == SIM_UPGRADE_ATTACK && state->shot_interval == SIM_MIN_SHOT_TICKS) return false;
     assert(state->xp >= state->xp_next && state->xp_next <= INT_MAX - 2 && state->level < INT_MAX);
     switch (option) {
@@ -136,10 +148,12 @@ static float wall_hit(float x, float y, float dx, float dy, float half) {
     return first;
 }
 
-static void spawn(sim_state *state) {
+static bool spawn(sim_state *state, sim_enemy_kind kind) {
+    assert(kind >= SIM_CHASER && kind < SIM_ENEMY_KIND_COUNT);
+    const int health[] = {2, 1, 6, SIM_BOSS_HP};
     int slot = 0;
     while (slot < SIM_MAX_ENEMIES && state->enemies[slot].active) ++slot;
-    if (slot == SIM_MAX_ENEMIES) return;
+    if (slot == SIM_MAX_ENEMIES) return false;
     enum { WIDTH = SIM_WIDTH - 2, HEIGHT = SIM_HEIGHT - 2,
            PERIMETER = 2 * WIDTH + 2 * (HEIGHT - 2) };
     /* Each perimeter center is attempted once, with a deterministic wave offset. */
@@ -159,10 +173,25 @@ static void spawn(sim_state *state) {
                 absf(py - enemy->y) < 2 * SIM_ENEMY_HALF) occupied = true;
         }
         if (!occupied && !sim_solid(x, y)) {
-            state->enemies[slot] = (sim_enemy){px, py, 2, true};
-            return;
+            state->enemies[slot] = (sim_enemy){
+                .x = px, .y = py, .hp = health[kind], .active = true,
+                .kind = kind, .attack_ticks = kind == SIM_BOSS ? 240 : 0,
+            };
+            return true;
         }
     }
+    return false;
+}
+
+static void start_boss(sim_state *state) {
+    // Make room for a guaranteed boss, even if the ordinary enemy pool is full.
+    for (int i = 0; i < SIM_MAX_ENEMIES; ++i) state->enemies[i].active = false;
+    for (int i = 0; i < SIM_MAX_BULLETS; ++i) state->bullets[i].active = false;
+    for (int i = 0; i < SIM_MAX_HOSTILE_BULLETS; ++i) state->hostile_bullets[i].active = false;
+    state->boss_started = true;
+    bool spawned = spawn(state, SIM_BOSS);
+    assert(spawned); // The fixed arena has ample free perimeter cells.
+    (void)spawned;
 }
 
 static void chase(sim_state *state) {
@@ -204,7 +233,9 @@ static void chase(sim_state *state) {
         }
         float vx = tx - enemy->x, vy = ty - enemy->y;
         const float length = __builtin_sqrtf(vx * vx + vy * vy);
-        const float step = (float)(28.0 * SIM_STEP);
+        const float speeds[] = {28, 44, 18, 24};
+        assert(enemy->kind >= SIM_CHASER && enemy->kind < SIM_ENEMY_KIND_COUNT);
+        const float step = (float)(speeds[enemy->kind] * SIM_STEP);
         if (length > step) { vx *= step / length; vy *= step / length; }
         move_x(&enemy->x, enemy->y, SIM_ENEMY_HALF, vx);
         move_y(enemy->x, &enemy->y, SIM_ENEMY_HALF, vy);
@@ -237,13 +268,13 @@ static void shoot(sim_state *state) {
     }
 }
 
-static void drop_gem(sim_state *state, float x, float y) {
+static void drop_gem(sim_state *state, float x, float y, int value) {
     int nearest = -1;
     float distance = FLT_MAX;
     for (int i = 0; i < SIM_MAX_GEMS; ++i) {
         sim_gem *gem = &state->gems[i];
         if (!gem->active) {
-            *gem = (sim_gem){x, y, 1, true};
+            *gem = (sim_gem){x, y, value, true};
             return;
         }
         float dx = gem->x - x, dy = gem->y - y;
@@ -252,8 +283,8 @@ static void drop_gem(sim_state *state, float x, float y) {
     }
     // Pool saturation is expected: merge the value into the nearest gem
     // instead of dropping XP or allocating an unbounded number of pickups.
-    assert(nearest >= 0 && state->gems[nearest].value < INT_MAX);
-    ++state->gems[nearest].value;
+    assert(nearest >= 0 && state->gems[nearest].value <= INT_MAX - value);
+    state->gems[nearest].value += value;
 }
 
 static void collect_gems(sim_state *state) {
@@ -305,7 +336,15 @@ static void projectiles(sim_state *state) {
                     enemy->hp = 0;
                     enemy->active = false;
                     ++state->kills;
-                    drop_gem(state, enemy->x, enemy->y);
+                    if (enemy->kind == SIM_BOSS) {
+                        state->won = true;
+                        state->choosing = false;
+                        for (int k = 0; k < SIM_MAX_ENEMIES; ++k) state->enemies[k].active = false;
+                        for (int k = 0; k < SIM_MAX_BULLETS; ++k) state->bullets[k].active = false;
+                        for (int k = 0; k < SIM_MAX_HOSTILE_BULLETS; ++k) state->hostile_bullets[k].active = false;
+                        return; // Victory wins this tick before hostile/contact damage.
+                    }
+                    drop_gem(state, enemy->x, enemy->y, enemy->kind == SIM_BRUTE ? 3 : 1);
                 }
             }
         } else { bullet->x += dx; bullet->y += dy; }
@@ -314,22 +353,96 @@ static void projectiles(sim_state *state) {
     }
 }
 
+static void damage_player(sim_state *state) {
+    if (state->hurt_ticks || state->dead || state->won) return;
+    assert(state->hp > 0);
+    --state->hp;
+    state->hurt_ticks = SIM_HURT_TICKS;
+    if (state->hp == 0) state->dead = true;
+}
+
+static void boss_attacks(sim_state *state) {
+    const float directions[8][2] = {
+        {1,0}, {.70710678f,.70710678f}, {0,1}, {-.70710678f,.70710678f},
+        {-1,0}, {-.70710678f,-.70710678f}, {0,-1}, {.70710678f,-.70710678f},
+    };
+    for (int i = 0; i < SIM_MAX_ENEMIES; ++i) {
+        sim_enemy *enemy = &state->enemies[i];
+        if (!enemy->active || enemy->kind != SIM_BOSS) continue;
+        int interval = enemy->hp <= SIM_BOSS_HP / 2 ? 120 : 240;
+        if (enemy->attack_ticks > interval) enemy->attack_ticks = interval;
+        if (enemy->attack_ticks > 0) --enemy->attack_ticks;
+        if (enemy->attack_ticks) continue;
+        enemy->attack_ticks = interval;
+        for (int d = 0; d < 8; ++d) {
+            for (int slot = 0; slot < SIM_MAX_HOSTILE_BULLETS; ++slot) {
+                if (state->hostile_bullets[slot].active) continue;
+                state->hostile_bullets[slot] = (sim_bullet){
+                    enemy->x, enemy->y, directions[d][0] * 52, directions[d][1] * 52,
+                    SIM_BULLET_TICKS, true,
+                };
+                break; // A full hostile pool skips only that projectile.
+            }
+        }
+    }
+}
+
+static void hostile_projectiles(sim_state *state) {
+    for (int i = 0; i < SIM_MAX_HOSTILE_BULLETS; ++i) {
+        sim_bullet *b = &state->hostile_bullets[i];
+        if (!b->active) continue;
+        if (b->ticks_left <= 0) { b->active = false; continue; }
+        float dx = b->vx * (float)SIM_STEP, dy = b->vy * (float)SIM_STEP;
+        float wall = wall_hit(b->x, b->y, dx, dy, SIM_BULLET_HALF), hit;
+        float half = SIM_BULLET_HALF + SIM_PLAYER_HALF;
+        bool player_hit = segment_box(b->x, b->y, dx, dy,
+            state->x - half, state->y - half, state->x + half, state->y + half, &hit) && hit < wall;
+        if (player_hit) {
+            b->active = false;
+            damage_player(state);
+        } else if (wall <= 1) {
+            b->active = false;
+        } else {
+            b->x += dx; b->y += dy;
+        }
+        --b->ticks_left;
+        if (!b->ticks_left) b->active = false;
+        if (state->dead) return;
+    }
+}
+
 static void combat(sim_state *state) {
     ++state->ticks;
     if (state->shot_ticks > 0) --state->shot_ticks;
     if (state->hurt_ticks > 0) --state->hurt_ticks;
-    if (state->spawn_ticks > 0) --state->spawn_ticks;
-    if (state->spawn_ticks == 0) { spawn(state); state->spawn_ticks = SIM_SPAWN_TICKS; }
+    if (!state->boss_started && state->ticks >= SIM_BOSS_TICKS) {
+        start_boss(state);
+    } else if (!state->boss_started) {
+        if (state->spawn_ticks > 0) --state->spawn_ticks;
+        if (state->spawn_ticks == 0) {
+            unsigned sequence = state->ticks / (unsigned)spawn_interval(state);
+            sim_enemy_kind kind = SIM_CHASER;
+            if (sim_wave(state) == 2 && sequence % 3 == 0) kind = SIM_RUNNER;
+            if (sim_wave(state) == 3) {
+                const sim_enemy_kind mix[] = {SIM_BRUTE, SIM_RUNNER, SIM_RUNNER, SIM_CHASER};
+                kind = mix[sequence % 4];
+            }
+            spawn(state, kind); // Full pools/occupied spawn sites skip this attempt.
+            state->spawn_ticks = spawn_interval(state);
+        }
+    }
     chase(state);
     shoot(state);
     projectiles(state);
+    if (state->won) return;
+    boss_attacks(state);
+    hostile_projectiles(state);
     if (state->hurt_ticks == 0) {
         for (int i = 0; i < SIM_MAX_ENEMIES; ++i) {
             sim_enemy *enemy = &state->enemies[i];
             if (!enemy->active || absf(enemy->x - state->x) >= SIM_ENEMY_HALF + SIM_PLAYER_HALF ||
                 absf(enemy->y - state->y) >= SIM_ENEMY_HALF + SIM_PLAYER_HALF) continue;
-            --state->hp; state->hurt_ticks = SIM_HURT_TICKS;
-            if (state->hp == 0) state->dead = true;
+            damage_player(state);
             break;
         }
     }
@@ -340,7 +453,7 @@ void sim_advance(sim_state *state, sim_input input, double elapsed) {
     assert(input.x >= -1 && input.x <= 1 && input.y >= -1 && input.y <= 1);
     /* This rejects NaN and both infinities without a platform math library. */
     assert(elapsed >= 0.0 && elapsed <= DBL_MAX);
-    if (state->dead || state->choosing) return;
+    if (state->dead || state->won || state->choosing) return;
     if (elapsed > 0.25) elapsed = 0.25;
     state->accumulator += elapsed;
     const float diagonal = 0.7071067811865475244f;
@@ -353,9 +466,9 @@ void sim_advance(sim_state *state, sim_input input, double elapsed) {
         move_x(&state->x, state->y, SIM_PLAYER_HALF, input.x * step);
         move_y(state->x, &state->y, SIM_PLAYER_HALF, input.y * step);
         combat(state);
-        if (!state->dead) collect_gems(state);
+        if (!state->dead && !state->won) collect_gems(state);
         state->accumulator -= SIM_STEP;
         if (state->accumulator < 0.0) state->accumulator = 0.0;
-        if (state->dead || state->choosing) { state->accumulator = 0.0; break; }
+        if (state->dead || state->won || state->choosing) { state->accumulator = 0.0; break; }
     }
 }

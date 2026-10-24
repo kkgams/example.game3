@@ -69,6 +69,23 @@ void init(void) {
             atlas[p] = atlas[p+1] = atlas[p+2] = atlas[p+3] = 255;
         }
     }
+    // Distinct silhouettes for runner, brute, boss and hostile projectiles.
+    for (int y = 48; y < 64; ++y) {
+        for (int x = 64; x < 128; ++x) {
+            int px = x % 16, py = y % 16;
+            int dx = px > 7 ? px - 7 : 7 - px;
+            int dy = py > 7 ? py - 7 : 7 - py;
+            bool body;
+            if (x < 80) body = py >= 3 && py <= 13 && dx <= (13 - py) / 2;
+            else if (x < 96) body = px >= 2 && px <= 13 && py >= 2 && py <= 13 &&
+                                   (px < 5 || px > 10 || py < 5 || py > 10);
+            else if (x < 112) body = (dx + dy <= 7 && dx + dy >= 4) || (dx <= 1 && dy <= 1);
+            else body = dx * dx + dy * dy <= 9;
+            int p = (y * 128 + x) * 4;
+            atlas[p] = atlas[p+1] = atlas[p+2] = 255;
+            atlas[p+3] = body ? 255 : 0;
+        }
+    }
     for (int g = 0; g < 36; ++g) {
         for (int row = 0; row < 7; ++row) {
             for (int col = 0; col < 5; ++col) {
@@ -99,7 +116,8 @@ void init(void) {
     r2_init(&state.renderer, state.atlas, state.lut);
 }
 
-enum { SPRITE_CAPACITY = 1 + SIM_MAX_ENEMIES + SIM_MAX_BULLETS + SIM_MAX_GEMS + 256 };
+enum { SPRITE_CAPACITY = 1 + SIM_MAX_ENEMIES + SIM_MAX_BULLETS + SIM_MAX_HOSTILE_BULLETS + SIM_MAX_GEMS + 256 };
+_Static_assert(SPRITE_CAPACITY <= R2_MAX_SPRITES, "game sprite capacity exceeds renderer");
 
 static void add_text(r2_sprite *sprites, int *count, const char *text, float x, float y) {
     for (int i = 0; text[i]; ++i) {
@@ -137,7 +155,7 @@ void frame(double elapsed) {
     sim_advance(&state.simulation, input, elapsed);
     if (!was_choosing && state.simulation.choosing)
         for (int i = 0; i < GAME_KEY_COUNT; ++i) state.keys[i] = false;
-    if (input.x && !state.simulation.dead && !state.simulation.choosing) state.face_left = input.x < 0;
+    if (input.x && !state.simulation.dead && !state.simulation.won && !state.simulation.choosing) state.face_left = input.x < 0;
     float zoom_x = 320.0f / swapchain.width;
     float zoom_y = 240.0f / swapchain.height;
     r2_camera camera = r2_camera_make(0, 0, (float)swapchain.width,
@@ -156,7 +174,7 @@ void frame(double elapsed) {
     int count = 0;
     // Player stays first in the upload for integration checks.
     sprites[count++] = (r2_sprite){
-        .pos = {s->x,s->y}, .opacity = s->hurt_ticks && (s->ticks / 8) % 2 ? .3f : 1,
+        .pos = {s->x,s->y}, .opacity = !s->dead && !s->won && s->hurt_ticks && (s->ticks / 8) % 2 ? .3f : 1,
         .uv = {0,0,.125f,.25f}, .flip = state.face_left ? 1 : 0,
         .color_add = {1,0,0,s->dead ? 1 : 0},
     };
@@ -167,13 +185,28 @@ void frame(double elapsed) {
             .uv = {.375f,.5f,.5f,.75f}, .color_add = {.65f,.4f,1,1},
         };
     }
+    const sim_enemy *boss = 0;
     for (int i = 0; i < SIM_MAX_ENEMIES; ++i) {
         const sim_enemy *enemy = &s->enemies[i];
         if (!enemy->active) continue;
+        assert(enemy->kind >= SIM_CHASER && enemy->kind < SIM_ENEMY_KIND_COUNT);
+        const float colors[SIM_ENEMY_KIND_COUNT][3] = {
+            {1,.22f,.3f}, {.6f,1,.25f}, {.3f,.65f,1}, {1,.85f,.15f},
+        };
+        float u = enemy->kind == SIM_CHASER ? .25f : .5f + (enemy->kind - 1) * .125f;
+        float v = enemy->kind == SIM_CHASER ? 0 : .75f;
         sprites[count++] = (r2_sprite){
             .pos = {enemy->x,enemy->y}, .opacity = 1,
-            .uv = {.25f,0,.375f,.25f}, .color_add = {1,.22f,.3f,1},
+            .uv = {u,v,u + .125f,v + .25f},
+            .color_add = {colors[enemy->kind][0],colors[enemy->kind][1],colors[enemy->kind][2],1},
         };
+        if (enemy->kind == SIM_BOSS) {
+            boss = enemy;
+            if (enemy->hp <= SIM_BOSS_HP / 2) {
+                sprites[count-1].color_add[1] = .25f;
+                sprites[count-1].color_add[2] = .05f;
+            }
+        }
     }
     for (int i = 0; i < SIM_MAX_BULLETS; ++i) {
         if (!s->bullets[i].active) continue;
@@ -182,6 +215,16 @@ void frame(double elapsed) {
             .uv = {.375f,0,.5f,.25f}, .color_add = {.4f,1,1,1},
         };
     }
+    for (int i = 0; i < SIM_MAX_HOSTILE_BULLETS; ++i) {
+        if (!s->hostile_bullets[i].active) continue;
+        sprites[count++] = (r2_sprite){
+            .pos = {s->hostile_bullets[i].x,s->hostile_bullets[i].y}, .opacity = 1,
+            .uv = {.875f,.75f,1,1}, .color_add = {1,.3f,.65f,1},
+        };
+    }
+    add_text(sprites, &count, "TIME", -52, 96);
+    unsigned remaining = s->ticks < SIM_BOSS_TICKS ? (SIM_BOSS_TICKS - s->ticks + 119) / 120 : 0;
+    add_number(sprites, &count, remaining, -12, 96);
     add_text(sprites, &count, "HP", -132, 96);
     for (int i = 0; i < SIM_MAX_HP; ++i) {
         sprites[count++] = (r2_sprite){
@@ -223,10 +266,27 @@ void frame(double elapsed) {
                  "2 FASTER ATTACKS" : "2 ATTACK MAX", -76, -8);
         add_text(sprites, &count, "3 SPEED PLUS 8", -76, -28);
         add_text(sprites, &count, "CHOOSE 1 2 3", -44, -100);
-    } else if (s->dead) {
-        add_text(sprites, &count, "YOU DIED", -28, -96);
+    } else if (s->dead || s->won) {
+        add_text(sprites, &count, s->won ? "YOU WIN" : "YOU DIED", s->won ? -24 : -28, -96);
         add_text(sprites, &count, "R RETRY", -24, -108);
+    } else if (s->boss_started) {
+        assert(boss);
+        add_text(sprites, &count, "BOSS", -132, -96);
+        int bars = (boss->hp * 16 + SIM_BOSS_HP - 1) / SIM_BOSS_HP;
+        for (int i = 0; i < 16; ++i) {
+            sprites[count++] = (r2_sprite){
+                .pos = {-80 + i * 8.0f,-96}, .opacity = 1,
+                .uv = {.375f,.25f,.4375f,.3125f},
+                .color_add = {i < bars ? 1 : .15f, i < bars ? .45f : .12f, .1f, 1},
+            };
+        }
+        add_number(sprites, &count, (unsigned)boss->hp, 56, -96);
+        add_text(sprites, &count, "OF", 88, -96);
+        add_number(sprites, &count, SIM_BOSS_HP, 112, -96);
+        add_text(sprites, &count, "DEFEAT THE BOSS", -52, -108);
     } else {
+        add_text(sprites, &count, "WAVE", -132, -100);
+        add_number(sprites, &count, (unsigned)sim_wave(s), -92, -100);
         add_text(sprites, &count, "AUTO FIRE", -32, -100);
     }
     sg_begin_pass(&(sg_pass){
@@ -258,7 +318,7 @@ void event(const sapp_event *e) {
     }
     if (e->type != SAPP_EVENTTYPE_KEY_DOWN && e->type != SAPP_EVENTTYPE_KEY_UP) return;
     if (e->type == SAPP_EVENTTYPE_KEY_DOWN && e->key_code == SAPP_KEYCODE_R &&
-        !e->key_repeat && state.simulation.dead) {
+        !e->key_repeat && (state.simulation.dead || state.simulation.won)) {
         sim_init(&state.simulation);
         for (int i = 0; i < GAME_KEY_COUNT; ++i) state.keys[i] = false;
         state.face_left = false;

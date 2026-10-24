@@ -4,10 +4,11 @@ A fresh **C + Sokol** experiment based on your `gams3/plugins/game` setup.
 Shared tilemap and instanced-sprite pipelines, two targets: **macOS Metal** and
 **browser WebGL2/WASM**. Move a placeholder player around a fixed arena using
 **WASD or arrow keys**. Attacks fire automatically at nearby visible enemies.
-Red enemies chase around the solid outer walls and central block; contact costs
-health. Collect purple XP gems to fill the XP bar. Level-up pauses the world;
+Chasers, runners and brutes hunt around the solid outer walls and central block;
+contact costs health. Survive three 30-second waves, then defeat the final boss. Collect purple XP gems to fill the XP bar. Level-up pauses the world;
 press **1** for damage, **2** for attack speed, or **3** for movement speed.
-The HUD shows health, kills, level and XP. On death, press **R** to retry.
+The HUD shows time remaining, wave, health, kills, level and XP, plus boss health
+during the duel. After winning or dying, press **R** to restart.
 Assets, the map and spawn timing remain procedural/hand-authored.
 
 The minimal `gams.json` Project opens in GAMS (owner-verified). The rendering
@@ -34,7 +35,7 @@ make clean       # remove generated output
 
 Browser controls: WASD/arrows while the canvas has focus (click it to refocus),
 plus Pause/Resume and Reload. Use top-row 1/2/3 for level-up choices.
-R retries a dead run; Reload resets the whole run. Pausing, losing focus,
+R restarts after either win or loss; Reload resets the whole run. Pausing, losing focus,
 hiding the tab or using shortcut modifiers releases held movement keys and resets
 the browser frame clock (including macOS Command combinations with missing keyup).
 Missing WASM, unsupported WebGL2,
@@ -105,29 +106,55 @@ bindings in `game/app.h`, and `release_keys()` clears held input. WASD and arrow
 bindings are tracked independently. Simulation state is separate from rendering;
 there is no asset decoder or director in this milestone.
 
-## First combat loop
+## Timed run
 
-The same fixed-step simulation owns bounded pools of 16 enemies, 32 projectiles
-and 64 XP gems. A deterministic timer spawns the one enemy type at unoccupied inner
-perimeter tile centers: first after one second, then every 0.75 seconds. If a
-pool or all candidate spawn points are occupied, that attempt is skipped. Enemies chase at 28 pixels/second using a cardinal BFS
-field to route around the central block, while respecting tile collision.
+The run clock counts down **90 seconds of active play**, excluding level-up
+choices and browser pause time. Three hard-coded waves introduce enemy types:
+
+| Time elapsed | Enemies | Spawn interval |
+| --- | --- | --- |
+| 0–30 seconds | Red square chasers | 0.75 seconds (first spawn at 1 second) |
+| 30–60 seconds | Chasers + lime triangle runners | 0.625 seconds |
+| 60–90 seconds | Chasers + runners + blue hollow-square brutes | 0.5 seconds |
+| 90 seconds onward | Gold diamond boss, turning orange at half health | No ordinary spawns |
+
+Chasers have 2 HP and move at 28 pixels/second; runners have 1 HP and move at 44;
+brutes have 6 HP, move at 18 and drop 3 XP. All use cardinal BFS routing around
+the central block and a common 10x10 collision body. Their sprite silhouettes
+and colors differ. Spawn points are deterministic, unoccupied inner perimeter
+tile centers. Full enemy pools/occupied spawn sites skip that ordinary attempt.
+
+Pools are bounded: 16 enemies, 32 player shots, 32 hostile shots and 64 XP gems.
+Hostile saturation cannot starve the player's weapon.
 
 The player automatically targets the nearest visible enemy within 112 pixels,
 initially firing every 0.5 seconds. Shots travel at 160 pixels/second, expire after two
-seconds, stop at walls and hit only the first enemy on their swept path. Enemies
-have two HP; each kill increments the HUD count. The player has three HP and
+seconds, stop at walls and hit only the first enemy on their swept path. Each
+kill increments the HUD count. The player has three HP and
 0.75 seconds of contact-damage invulnerability, shown by blinking. Death freezes
 the simulation; R resets the whole run, including progression and input.
 
-This is a hard-coded combat fixture, not a scenario format or balance promise.
-BulletML, additional skills, authored scenarios, boss and scene flow remain
-deferred. The HUD uses a small authored bitmap font in the same atlas,
+At zero on the countdown, ordinary enemies and all in-flight shots are cleared
+for a guaranteed boss duel, even if the enemy pool was full. Player health,
+XP and upgrades are retained, without a free heal. The boss has **120 HP**, moves
+at 24 pixels/second and fires eight-direction rings every two seconds. At half
+health it turns orange and fires every second. Pink hostile shots move at 52
+pixels/second, expire after two seconds, stop at walls, and share the same damage
+invulnerability window as contact hits.
+
+The timer reaching zero is not victory: **kill the boss to win**. Victory clears
+remaining threats, freezes the clock/world, and displays YOU WIN / R RETRY.
+Boss death wins its simulation tick before hostile/contact damage. Loss also
+freezes the run, and R fully restarts either result.
+
+These are hard-coded encounters, not a scenario format or balance promise.
+BulletML, additional skills, GAMS-authored scenarios and title/credits remain
+deferred; the boss ring is a small authored C pattern, not a BulletML runner. The HUD uses a small authored bitmap font in the same atlas,
 so native and browser show the same result/retry prompt without new libraries.
 
 ## XP and upgrades
 
-Each kill drops one XP at the enemy position. Gems within 32 pixels move toward
+Each regular kill drops one XP at the enemy position; brutes drop three. Gems within 32 pixels move toward
 the player at 96 pixels/second, with wall-aware line of sight; distant or blocked
 gems wait in place. Collection grants their value exactly once. If all 64 gem
 slots are occupied, new XP merges into the nearest existing gem rather than being
@@ -158,16 +185,26 @@ pack, BulletML or gameplay systems were imported. The original triangle shader
 is retained as a shader-generation test fixture, not drawn by the app. Output
 filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
 
-- `make test`: passed (12 Node tests). Includes standalone C movement/collision
+- `make test`: passed (13 Node tests). Includes standalone C movement/collision
   assertions (movement, fixed-step timing, collision, spawning, chase paths,
   targeting/line of sight, swept projectile hits, pool saturation, contact damage,
   death/reset, XP drops/attraction, blocked pickups, pool merging, exact collection,
   level-up freeze/overflow, all upgrades and invalid inputs), browser runner
   key/focus/pause/clock/choice/retry tests, and real WASM submission/input through
   a mock GPU, including XP/level-up, choice/resume, death and retry.
+  Timed-run tests cover exact wave boundaries, pause-clock behavior, type stats,
+  guaranteed boss entry from a full pool, both boss phases, hostile sweeps/pool
+  saturation, victory/loss, full reset and a full timeline-to-victory simulation.
+  That last test uses invulnerability to isolate flow from balance, not to claim
+  that an automated player or a human has beaten the new encounter tuning.
+  `test/scene.c` builds a separate test-only WASM to exercise real app rendering
+  of each wave, boss health/shots, victory freeze and retry. Staging hooks are
+  absent from the production WASM; all fixture artifacts stay in build.nosync/.
 - Chrome/WebGL2: verified arena/player, enemy and projectile rendering, HUD,
   automatic kills, purple gems, XP bar, paused choice panel, damage selection,
-  level/XP update, death/result and R retry. Earlier checks verified obstacle
+  level/XP update, death/result and R retry. A staged, test-only Chrome fixture
+  also verified the boss silhouette, ring shots, health bar and victory screen.
+  A complete human balance playtest of the new waves/boss remains outstanding. Earlier checks verified obstacle
   sliding, outer-wall collision, focus release, sprite flips, opacity and tint.
 - Zig 0.17.0: `make native`, `make smoke-native` and `make test` pass.
   The native recipe uses `--sysroot "$SDK" -F/System/Library/Frameworks`:
