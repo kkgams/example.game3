@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 
-test('standalone simulation: movement, combat, timing, collision, death/retry and assertions', async t => {
+test('standalone simulation: movement, combat, XP/upgrades, timing, collision, death/retry and assertions', async t => {
   const build = path.join(root, 'build.nosync')
   await mkdir(build, { recursive: true })
   // Each test process owns its executable; concurrent runs never overwrite it.
@@ -20,7 +20,7 @@ test('standalone simulation: movement, combat, timing, collision, death/retry an
   ], { cwd: root, encoding: 'utf8' })
   const output = execFileSync(executable, [], { cwd: folder, encoding: 'utf8' })
   assert.match(output, /simulation assertions passed/)
-  for (const invalid of ['negative', 'nan', 'infinite', 'negative-infinite', 'axis-x', 'axis-y']) {
+  for (const invalid of ['negative', 'nan', 'infinite', 'negative-infinite', 'axis-x', 'axis-y', 'upgrade-negative', 'upgrade-range']) {
     const result = spawnSync(executable, [invalid], { cwd: folder, encoding: 'utf8' })
     assert.ifError(result.error)
     assert.ok(result.status !== 0 || result.signal, `${invalid} must assert`)

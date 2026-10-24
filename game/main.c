@@ -56,6 +56,19 @@ void init(void) {
             atlas[p+3] = body ? 255 : 0;
         }
     }
+    // XP gem, 8x4 bar segment and solid 16x16 panel tile in unused cells.
+    for (int y = 0; y < 64; ++y) {
+        for (int x = 32; x < 64; ++x) {
+            bool gem = x >= 48 && y >= 32 && y < 48 &&
+                (x % 16 > 7 ? x % 16 - 7 : 7 - x % 16) +
+                (y % 16 > 7 ? y % 16 - 7 : 7 - y % 16) <= 2;
+            bool bar = x >= 48 && x < 56 && y >= 16 && y < 20;
+            bool panel = x < 48 && y >= 48;
+            if (!gem && !bar && !panel) continue;
+            int p = (y * 128 + x) * 4;
+            atlas[p] = atlas[p+1] = atlas[p+2] = atlas[p+3] = 255;
+        }
+    }
     for (int g = 0; g < 36; ++g) {
         for (int row = 0; row < 7; ++row) {
             for (int col = 0; col < 5; ++col) {
@@ -86,7 +99,7 @@ void init(void) {
     r2_init(&state.renderer, state.atlas, state.lut);
 }
 
-enum { SPRITE_CAPACITY = 1 + SIM_MAX_ENEMIES + SIM_MAX_BULLETS + 128 };
+enum { SPRITE_CAPACITY = 1 + SIM_MAX_ENEMIES + SIM_MAX_BULLETS + SIM_MAX_GEMS + 256 };
 
 static void add_text(r2_sprite *sprites, int *count, const char *text, float x, float y) {
     for (int i = 0; text[i]; ++i) {
@@ -120,8 +133,11 @@ void frame(double elapsed) {
         .y = (state.keys[GAME_KEY_W] || state.keys[GAME_KEY_UP]) -
              (state.keys[GAME_KEY_S] || state.keys[GAME_KEY_DOWN]),
     };
+    bool was_choosing = state.simulation.choosing;
     sim_advance(&state.simulation, input, elapsed);
-    if (input.x && !state.simulation.dead) state.face_left = input.x < 0;
+    if (!was_choosing && state.simulation.choosing)
+        for (int i = 0; i < GAME_KEY_COUNT; ++i) state.keys[i] = false;
+    if (input.x && !state.simulation.dead && !state.simulation.choosing) state.face_left = input.x < 0;
     float zoom_x = 320.0f / swapchain.width;
     float zoom_y = 240.0f / swapchain.height;
     r2_camera camera = r2_camera_make(0, 0, (float)swapchain.width,
@@ -144,6 +160,13 @@ void frame(double elapsed) {
         .uv = {0,0,.125f,.25f}, .flip = state.face_left ? 1 : 0,
         .color_add = {1,0,0,s->dead ? 1 : 0},
     };
+    for (int i = 0; i < SIM_MAX_GEMS; ++i) {
+        if (!s->gems[i].active) continue;
+        sprites[count++] = (r2_sprite){
+            .pos = {s->gems[i].x,s->gems[i].y}, .opacity = 1,
+            .uv = {.375f,.5f,.5f,.75f}, .color_add = {.65f,.4f,1,1},
+        };
+    }
     for (int i = 0; i < SIM_MAX_ENEMIES; ++i) {
         const sim_enemy *enemy = &s->enemies[i];
         if (!enemy->active) continue;
@@ -169,7 +192,38 @@ void frame(double elapsed) {
     }
     add_text(sprites, &count, "KILLS", 40, 96);
     add_number(sprites, &count, (unsigned)s->kills, 88, 96);
-    if (s->dead) {
+    add_text(sprites, &count, "LV", -132, 112);
+    add_number(sprites, &count, (unsigned)s->level, -108, 112);
+    add_text(sprites, &count, "XP", -72, 112);
+    float fraction = (float)s->xp / s->xp_next;
+    int filled = fraction >= 1 ? 16 : (int)(fraction * 16);
+    for (int i = 0; i < 16; ++i) {
+        sprites[count++] = (r2_sprite){
+            .pos = {-44 + i * 8.0f,112}, .opacity = 1,
+            .uv = {.375f,.25f,.4375f,.3125f},
+            .color_add = {i < filled ? .65f : .12f, i < filled ? .4f : .12f,
+                          i < filled ? 1 : .2f, 1},
+        };
+    }
+    add_number(sprites, &count, (unsigned)s->xp, 96, 112);
+    add_text(sprites, &count, "OF", 112, 112);
+    add_number(sprites, &count, (unsigned)s->xp_next, 136, 112);
+    if (s->choosing) {
+        for (int row = 0; row < 6; ++row) {
+            for (int col = 0; col < 14; ++col) {
+                sprites[count++] = (r2_sprite){
+                    .pos = {-104 + col * 16.0f,-40 + row * 16.0f}, .opacity = .97f,
+                    .uv = {.25f,.75f,.375f,1}, .color_add = {.04f,.05f,.08f,1},
+                };
+            }
+        }
+        add_text(sprites, &count, "LEVEL UP", -28, 32);
+        add_text(sprites, &count, "1 DAMAGE PLUS 1", -76, 12);
+        add_text(sprites, &count, s->shot_interval > SIM_MIN_SHOT_TICKS ?
+                 "2 FASTER ATTACKS" : "2 ATTACK MAX", -76, -8);
+        add_text(sprites, &count, "3 SPEED PLUS 8", -76, -28);
+        add_text(sprites, &count, "CHOOSE 1 2 3", -44, -100);
+    } else if (s->dead) {
         add_text(sprites, &count, "YOU DIED", -28, -96);
         add_text(sprites, &count, "R RETRY", -24, -108);
     } else {
@@ -210,6 +264,13 @@ void event(const sapp_event *e) {
         state.face_left = false;
         return;
     }
+    if (e->type == SAPP_EVENTTYPE_KEY_DOWN && !e->key_repeat &&
+        e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_3) {
+        if (sim_choose_upgrade(&state.simulation, e->key_code - SAPP_KEYCODE_1))
+            for (int i = 0; i < GAME_KEY_COUNT; ++i) state.keys[i] = false;
+        return;
+    }
+    if (state.simulation.choosing && e->type == SAPP_EVENTTYPE_KEY_DOWN) return;
     const sapp_keycode codes[GAME_KEY_COUNT] = {
         SAPP_KEYCODE_W, SAPP_KEYCODE_A, SAPP_KEYCODE_S, SAPP_KEYCODE_D,
         SAPP_KEYCODE_UP, SAPP_KEYCODE_LEFT, SAPP_KEYCODE_DOWN, SAPP_KEYCODE_RIGHT,

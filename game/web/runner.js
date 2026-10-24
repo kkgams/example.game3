@@ -83,7 +83,7 @@ async function boot() {
   pauseButton.textContent = 'Pause'
   pauseButton.disabled = false
   reloadButton.disabled = false
-  status.textContent = 'WASD / arrows: move. Auto fire. Avoid red enemies. R: retry after death.'
+  status.textContent = 'WASD / arrows: move. Auto fire. Avoid red enemies. 1 / 2 / 3: upgrade. R: retry after death.'
   document.body.dataset.state = 'ready'
   lastTime = null
   canvas.focus({ preventScroll: true })
@@ -122,6 +122,12 @@ window.addEventListener('keydown', (event) => {
   // retain movement across shortcut modifiers, including their release.
   if (shortcutModifier(event)) { releaseInput(); return }
   if (paused || document.hidden || document.activeElement !== canvas) return
+  const upgrade = ['Digit1', 'Digit2', 'Digit3'].indexOf(event.code)
+  if (upgrade >= 0) {
+    event.preventDefault()
+    if (!event.repeat) { lastTime = null; instance.exports.choose_upgrade(upgrade) }
+    return
+  }
   if (event.code === 'KeyR') {
     event.preventDefault()
     if (!event.repeat) { releaseInput(); instance.exports.retry() }

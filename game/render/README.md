@@ -79,16 +79,18 @@ tint by its fourth component. Strength 0 leaves source RGB unchanged.
 `game/main.c` generates its own 128x64 RGBA8 atlas and 16x11 lookup texture.
 The original tile area occupies the first 32x32 texels; tilemap instances use
 that atlas subrectangle to preserve tile IDs. Extra cells hold an enemy, bullet,
-health pip and authored 5x7 bitmap glyphs. All game objects and HUD text share
-one sprite batch, with HUD submitted last. The lookup texture is built from
+health pip, XP gem, bar segment, dark panel tile and authored 5x7 bitmap glyphs.
+All game objects, XP bar, HUD text and level-up panel share one sprite batch,
+with HUD/panel submitted last. The lookup texture is built from
 `sim_tile`, the same hand-authored source used by collision. The combat arena
 replaces the earlier flips/opacity/tint gallery; those features remain available. No packed resources, external art or generated GAMS
 models are required.
 
 `make test` checks shader generation and real WASM submission through a mock GPU,
 including integer attributes, upload sizes, projection, movement input, a full
-combat/death/retry run, minimize, cleanup and reinitialization. Separate C tests
-cover movement/collision and combat; runner tests cover browser keys, retry,
+combat/XP/choice/death/retry run, minimize, cleanup and reinitialization. Separate C tests
+cover movement/collision, combat and progression; runner tests cover browser
+keys, upgrade choices, retry,
 clock and focus/pause lifecycle. These do not
 prove shader pixels. Chrome visual/movement checks and a three-frame real Metal
 smoke run were performed. Native/web builds and tests pass with Zig 0.17.0;

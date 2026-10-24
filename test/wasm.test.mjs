@@ -8,7 +8,7 @@ const module = await WebAssembly.compile(bytes)
 
 test('WASM imports and exports match the standalone runner', () => {
   const exports = new Set(WebAssembly.Module.exports(module).map(x => x.name))
-  for (const name of ['memory', 'init', 'frame', 'cleanup', 'resize', 'key', 'release_keys', 'retry']) {
+  for (const name of ['memory', 'init', 'frame', 'cleanup', 'resize', 'key', 'release_keys', 'retry', 'choose_upgrade']) {
     assert.ok(exports.has(name), `missing export ${name}`)
   }
   const imports = new GLBridge({}, null).createImportObject()
@@ -64,7 +64,7 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   instance.exports.frame(0)
   const draws = calls.filter(c => c[0] === 'drawElementsInstanced')
   assert.equal(draws.length, 2, 'tilemap batch and player/HUD sprite batch')
-  assert.deepEqual(draws.map(c => [c[2], c[5]]), [[6, 2], [6, 20]])
+  assert.deepEqual(draws.map(c => [c[2], c[5]]), [[6, 2], [6, 45]])
   const uniforms = calls.filter(c => c[0] === 'uniform4fv')
   assert.equal(uniforms.length, 2)
   assert.ok(Math.abs(uniforms[0][2][0] - 2 / 320) < 0.00001, 'pixel-space projection')
@@ -80,7 +80,7 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   assert.ok(calls.some(c => c[0] === 'vertexAttribIPointer' && c[2] === 2 && c[3] === constants.INT && c[4] === 60 && c[5] === 52))
   assert.ok(calls.some(c => c[0] === 'vertexAttribDivisor' && c[2] === 1))
   const uploads = calls.filter(c => c[0] === 'bufferSubData').slice(-2)
-  assert.deepEqual(uploads.map(c => c[3].length), [2 * 64, 20 * 60])
+  assert.deepEqual(uploads.map(c => c[3].length), [2 * 64, 45 * 60])
   function player() {
     const upload = calls.filter(c => c[0] === 'bufferSubData').at(-1)
     const view = new DataView(Uint8Array.from(upload[3]).buffer)
@@ -138,7 +138,7 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   instance.exports.init()
   instance.exports.frame(0)
   assert.deepEqual(player(), start, 'reload resets player position and facing')
-  let sawEnemy = false, sawBullet = false, died = false
+  let sawEnemy = false, sawBullet = false, sawGem = false, sawLevel = false, died = false
   function spriteUpload() {
     return new DataView(Uint8Array.from(calls.findLast(c => c[0] === 'bufferSubData')[3]).buffer)
   }
@@ -160,13 +160,29 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
       const u = upload.getFloat32(offset + 20, true), v = upload.getFloat32(offset + 24, true)
       if (u === .25 && v === 0) sawEnemy = true
       if (u === .375 && v === 0) sawBullet = true
+      if (u === .375 && v === .5) sawGem = true
+    }
+    if (hudText().includes('LEVELUP')) {
+      sawLevel = true
+      const frozen = calls.findLast(c => c[0] === 'bufferSubData')[3]
+      instance.exports.key(3, 1)
+      instance.exports.frame(10)
+      assert.deepEqual(calls.findLast(c => c[0] === 'bufferSubData')[3], frozen, 'level-up pauses the entire world')
+      instance.exports.choose_upgrade(2) // Speed: keep baseline weapon for the death test.
+      instance.exports.frame(0)
+      assert.ok(!hudText().includes('LEVELUP'), 'choice resumes gameplay')
+      const resumed = player()
+      instance.exports.frame(0)
+      assert.deepEqual(player(), resumed, 'choosing clears held movement')
     }
     if (upload.getFloat32(48, true) === 1) { died = true; break }
   }
   assert.ok(sawEnemy, 'chasing enemies are rendered')
   assert.ok(sawBullet, 'automatic projectiles are rendered')
+  assert.ok(sawGem, 'XP gems are rendered')
+  assert.ok(sawLevel, 'collected XP presents an upgrade choice')
   assert.ok(died, 'idle player eventually loses to incoming enemies')
-  assert.match(hudText(), /^HPKILLS[1-9][0-9]*YOUDIEDRRETRY$/, 'kills and retry result are visible')
+  assert.match(hudText(), /^HPKILLS[1-9][0-9]*LV[2-9][0-9]*XP[0-9]+OF[0-9]+YOUDIEDRRETRY$/, 'level, XP, kills and retry result are visible')
   const deadPlayer = player(), deadHud = hudText()
   instance.exports.key(3, 1)
   instance.exports.frame(.25)
@@ -175,7 +191,7 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   instance.exports.retry()
   instance.exports.frame(0)
   assert.deepEqual(player(), start, 'R retry resets position, facing and held keys')
-  assert.equal(hudText(), 'HPKILLS0AUTOFIRE')
+  assert.equal(hudText(), 'HPKILLS0LV1XP0OF3AUTOFIRE')
   instance.exports.frame(.25)
   assert.deepEqual(player(), start, 'retry releases movement held at death')
   instance.exports.cleanup()

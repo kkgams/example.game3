@@ -22,7 +22,7 @@ async function harness() {
     })
   }
   const calls = []
-  const exports = Object.fromEntries(['init', 'cleanup', 'resize', 'frame', 'key', 'release_keys', 'retry'].map(name =>
+  const exports = Object.fromEntries(['init', 'cleanup', 'resize', 'frame', 'key', 'release_keys', 'retry', 'choose_upgrade'].map(name =>
     [name, (...args) => calls.push([name, ...args])]))
   exports.memory = { buffer: new ArrayBuffer(64) }
   const canvas = target({clientWidth: 640, clientHeight: 480, dataset: {}, getContext: () => ({})})
@@ -79,6 +79,13 @@ test('browser runner uses physical movement keys only while the canvas is active
   const retries = h.calls.filter(c => c[0] === 'retry').length
   await h.window.emit('keydown', {code: 'KeyR', repeat: true})
   assert.equal(h.calls.filter(c => c[0] === 'retry').length, retries, 'holding retry is not repeated')
+  for (const [option, code] of ['Digit1', 'Digit2', 'Digit3'].entries()) {
+    assert.equal((await h.window.emit('keydown', {code})).prevented, true)
+    assert.deepEqual(h.calls.at(-1), ['choose_upgrade', option])
+    const n = h.calls.length
+    await h.window.emit('keydown', {code, repeat: true})
+    assert.equal(h.calls.length, n, 'held choice cannot consume another level')
+  }
   // macOS can suppress D keyup while Command is held. Modifier transitions
   // must clear D even when its keyup never arrives.
   await h.window.emit('keydown', {code: 'KeyD'})

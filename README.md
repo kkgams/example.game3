@@ -5,9 +5,10 @@ Shared tilemap and instanced-sprite pipelines, two targets: **macOS Metal** and
 **browser WebGL2/WASM**. Move a placeholder player around a fixed arena using
 **WASD or arrow keys**. Attacks fire automatically at nearby visible enemies.
 Red enemies chase around the solid outer walls and central block; contact costs
-health. The HUD shows health and kills. On death, press **R** to retry.
-Assets, the map and spawn timing are procedural/hand-authored; progression is
-not implemented.
+health. Collect purple XP gems to fill the XP bar. Level-up pauses the world;
+press **1** for damage, **2** for attack speed, or **3** for movement speed.
+The HUD shows health, kills, level and XP. On death, press **R** to retry.
+Assets, the map and spawn timing remain procedural/hand-authored.
 
 The minimal `gams.json` Project opens in GAMS (owner-verified). The rendering
 fixture still runs standalone, not embedded in a GAMS View.
@@ -32,7 +33,8 @@ make clean       # remove generated output
 ```
 
 Browser controls: WASD/arrows while the canvas has focus (click it to refocus),
-plus Pause/Resume and Reload. R retries a dead run; Reload resets the whole run. Pausing, losing focus,
+plus Pause/Resume and Reload. Use top-row 1/2/3 for level-up choices.
+R retries a dead run; Reload resets the whole run. Pausing, losing focus,
 hiding the tab or using shortcut modifiers releases held movement keys and resets
 the browser frame clock (including macOS Command combinations with missing keyup).
 Missing WASM, unsupported WebGL2,
@@ -105,23 +107,46 @@ there is no asset decoder or director in this milestone.
 
 ## First combat loop
 
-The same fixed-step simulation now owns bounded pools of 16 enemies and 32
-projectiles. A deterministic timer spawns the one enemy type at unoccupied inner
+The same fixed-step simulation owns bounded pools of 16 enemies, 32 projectiles
+and 64 XP gems. A deterministic timer spawns the one enemy type at unoccupied inner
 perimeter tile centers: first after one second, then every 0.75 seconds. If a
 pool or all candidate spawn points are occupied, that attempt is skipped. Enemies chase at 28 pixels/second using a cardinal BFS
 field to route around the central block, while respecting tile collision.
 
 The player automatically targets the nearest visible enemy within 112 pixels,
-firing every 0.5 seconds. Shots travel at 160 pixels/second, expire after two
+initially firing every 0.5 seconds. Shots travel at 160 pixels/second, expire after two
 seconds, stop at walls and hit only the first enemy on their swept path. Enemies
 have two HP; each kill increments the HUD count. The player has three HP and
 0.75 seconds of contact-damage invulnerability, shown by blinking. Death freezes
-the simulation; R resets health, enemies, bullets, timers, score and input.
+the simulation; R resets the whole run, including progression and input.
 
 This is a hard-coded combat fixture, not a scenario format or balance promise.
-BulletML, XP/pickups, skills, upgrades, authored scenarios, boss and scene flow
-remain deferred. The HUD uses a small authored bitmap font in the same atlas,
+BulletML, additional skills, authored scenarios, boss and scene flow remain
+deferred. The HUD uses a small authored bitmap font in the same atlas,
 so native and browser show the same result/retry prompt without new libraries.
+
+## XP and upgrades
+
+Each kill drops one XP at the enemy position. Gems within 32 pixels move toward
+the player at 96 pixels/second, with wall-aware line of sight; distant or blocked
+gems wait in place. Collection grants their value exactly once. If all 64 gem
+slots are occupied, new XP merges into the nearest existing gem rather than being
+lost. A level starts at 3 XP; each next threshold costs 2 more (3, 5, 7, ...).
+
+Reaching the threshold pauses movement, enemies, shots, pickups, spawning and all
+simulation timers. A fresh top-row key press chooses one upgrade:
+
+- **1 Damage:** +1 hit damage, also applied to shots already in flight.
+- **2 Attack speed:** subtract 6 fixed ticks (0.05 seconds) from the fire interval,
+  down to 12 ticks (0.1 seconds). At the cap it shows MAX and consumes no choice.
+- **3 Movement speed:** +8 world pixels/second, retaining diagonal normalization
+  and swept wall collision.
+
+An accepted choice consumes its threshold, increments the level and resumes with
+no accumulated pause time or held movement. Excess XP is preserved; if enough
+remains for another level, the next choice stays open and requires another fresh
+key press. Damage and movement upgrades stack; this is prototype tuning, not a
+finished balance model. Retry clears gems, XP, levels and all stat upgrades.
 
 ## Rendering and verification
 
@@ -136,11 +161,13 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
 - `make test`: passed (12 Node tests). Includes standalone C movement/collision
   assertions (movement, fixed-step timing, collision, spawning, chase paths,
   targeting/line of sight, swept projectile hits, pool saturation, contact damage,
-  death/reset and invalid inputs), browser runner key/focus/pause/clock/retry
-  tests, and real WASM submission/input through a mock GPU, including a complete
-  idle combat run through kills, death, frozen result and retry.
+  death/reset, XP drops/attraction, blocked pickups, pool merging, exact collection,
+  level-up freeze/overflow, all upgrades and invalid inputs), browser runner
+  key/focus/pause/clock/choice/retry tests, and real WASM submission/input through
+  a mock GPU, including XP/level-up, choice/resume, death and retry.
 - Chrome/WebGL2: verified arena/player, enemy and projectile rendering, HUD,
-  automatic kills, death/result and R retry. Earlier checks verified obstacle
+  automatic kills, purple gems, XP bar, paused choice panel, damage selection,
+  level/XP update, death/result and R retry. Earlier checks verified obstacle
   sliding, outer-wall collision, focus release, sprite flips, opacity and tint.
 - Zig 0.17.0: `make native`, `make smoke-native` and `make test` pass.
   The native recipe uses `--sysroot "$SDK" -F/System/Library/Frameworks`:

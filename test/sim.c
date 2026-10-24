@@ -110,14 +110,22 @@ static void drive(sim_state *state, sim_input input) {
     }
 }
 
+static sim_state movement_state(float x, float y) {
+    sim_state s;
+    sim_init(&s);
+    s.x = x; s.y = y;
+    s.spawn_ticks = 1000000;
+    return s;
+}
+
 static void collisions(void) {
-    sim_state state = {.x = -80, .y = 32};
+    sim_state state = movement_state(-80, 32);
     drive(&state, (sim_input){-1, 0});
     assert(state.x == -107.0f);
-    state = (sim_state){.x = 80, .y = 32};
+    state = movement_state(80, 32);
     drive(&state, (sim_input){1, 0});
     assert(state.x == 107.0f);
-    state = (sim_state){.x = 80, .y = 0};
+    state = movement_state(80, 0);
     drive(&state, (sim_input){0, -1});
     assert(state.y == -59.0f);
     drive(&state, (sim_input){0, 1});
@@ -125,20 +133,20 @@ static void collisions(void) {
     drive(&state, (sim_input){1, 1});
     assert(state.x == 107.0f && state.y == 59.0f);
 
-    state = (sim_state){.x = -80, .y = 0};
+    state = movement_state(-80, 0);
     drive(&state, (sim_input){1, 0});
     assert(state.x == -21.0f);
-    state = (sim_state){.x = 80, .y = 0};
+    state = movement_state(80, 0);
     drive(&state, (sim_input){-1, 0});
     assert(state.x == 21.0f);
-    state = (sim_state){.x = 0, .y = -48};
+    state = movement_state(0, -48);
     drive(&state, (sim_input){0, 1});
     assert(state.y == -21.0f);
-    state = (sim_state){.x = 0, .y = 48};
+    state = movement_state(0, 48);
     drive(&state, (sim_input){0, -1});
     assert(state.y == 21.0f);
 
-    state = (sim_state){.x = -21, .y = 0};
+    state = movement_state(-21, 0);
     sim_advance(&state, (sim_input){1, 1}, 0.25);
     assert(state.x == -21.0f && state.y > 11.0f);
     free_body(&state);
@@ -148,7 +156,7 @@ static void collisions(void) {
     free_body(&state);
     for (int sx = -1; sx <= 1; sx += 2) {
         for (int sy = -1; sy <= 1; sy += 2) {
-            state = (sim_state){.x = sx * 32.0f, .y = sy * 32.0f};
+            state = movement_state(sx * 32.0f, sy * 32.0f);
             drive(&state, (sim_input){-sx, -sy});
         }
     }
@@ -355,6 +363,13 @@ static void combat_timing(void) {
     assert(a.x == b.x && b.x == c.x && a.y == b.y && b.y == c.y);
     assert(a.hp == b.hp && b.hp == c.hp && a.kills == b.kills && b.kills == c.kills);
     assert(a.dead == b.dead && b.dead == c.dead && a.ticks == b.ticks && b.ticks == c.ticks);
+    assert(a.level == b.level && b.level == c.level && a.xp == b.xp && b.xp == c.xp);
+    assert(a.choosing == b.choosing && b.choosing == c.choosing);
+    for (int i = 0; i < SIM_MAX_GEMS; ++i) {
+        sim_gem x = a.gems[i], y = b.gems[i], z = c.gems[i];
+        assert(x.x == y.x && y.x == z.x && x.y == y.y && y.y == z.y);
+        assert(x.value == y.value && y.value == z.value && x.active == y.active && y.active == z.active);
+    }
     assert(a.shot_ticks == b.shot_ticks && b.shot_ticks == c.shot_ticks);
     assert(a.spawn_ticks == b.spawn_ticks && b.spawn_ticks == c.spawn_ticks);
     assert(a.hurt_ticks == b.hurt_ticks && b.hurt_ticks == c.hurt_ticks);
@@ -372,6 +387,95 @@ static void combat_timing(void) {
     }
 }
 
+static int gem_value(const sim_state *s) {
+    int total = 0;
+    for (int i = 0; i < SIM_MAX_GEMS; ++i)
+        if (s->gems[i].active) total += s->gems[i].value;
+    return total;
+}
+
+static void progression(void) {
+    sim_state s = fixture();
+    assert(s.level == 1 && s.xp == 0 && s.xp_next == 3 && !s.choosing);
+    assert(s.damage == 1 && s.shot_interval == SIM_SHOT_TICKS && s.move_speed == SIM_SPEED);
+    assert(!sim_choose_upgrade(&s, SIM_UPGRADE_DAMAGE));
+    s.shot_ticks = 1000000;
+    s.enemies[0] = (sim_enemy){-48, 0, 1, true};
+    s.bullets[0] = (sim_bullet){-48, 0, 0, 0, 240, true};
+    ticks(&s, 1);
+    assert(s.kills == 1 && s.xp == 0 && gem_value(&s) == 1);
+    const float dropped_x = s.gems[0].x;
+    s.x += 1; /* Step inside the magnet radius after the kill. */
+    ticks(&s, 8);
+    assert(s.gems[0].x < dropped_x && s.xp == 0);
+    ticks(&s, 60);
+    assert(s.xp == 1 && gem_value(&s) == 0);
+    ticks(&s, 60);
+    assert(s.xp == 1); /* No duplicate collection. */
+
+    s = fixture();
+    s.gems[0] = (sim_gem){s.x, s.y, 5, true};
+    ticks(&s, 1);
+    assert(s.choosing && s.xp == 5 && s.accumulator == 0);
+    sim_state frozen = s;
+    sim_advance(&s, (sim_input){1, 1}, .25);
+    assert(memcmp(&s, &frozen, sizeof s) == 0); /* Everything pauses. */
+    assert(sim_choose_upgrade(&s, SIM_UPGRADE_DAMAGE));
+    assert(!s.choosing && s.level == 2 && s.xp == 2 && s.xp_next == 5 && s.damage == 2);
+    assert(!sim_choose_upgrade(&s, SIM_UPGRADE_SPEED)); /* No double choice. */
+    s.enemies[0] = (sim_enemy){-48, 0, 2, true};
+    s.bullets[0] = (sim_bullet){-48, 0, 0, 0, 240, true};
+    s.shot_ticks = 1000000;
+    ticks(&s, 1);
+    assert(!s.enemies[0].active && s.kills == 1); /* Upgraded hit damage. */
+
+    s = fixture(); s.xp = 3; s.choosing = true;
+    assert(sim_choose_upgrade(&s, SIM_UPGRADE_ATTACK));
+    s.enemies[0] = (sim_enemy){-48, 0, 100, true};
+    s.hurt_ticks = 1000000;
+    ticks(&s, 1);
+    assert(s.shot_ticks == 54);
+    ticks(&s, 53);
+    assert(s.shot_ticks == 1);
+    ticks(&s, 1);
+    assert(s.shot_ticks == 54); /* Upgraded cadence is used by actual firing. */
+
+    s = fixture(); s.xp = 12; s.choosing = true; s.shot_ticks = 60;
+    assert(sim_choose_upgrade(&s, SIM_UPGRADE_ATTACK));
+    assert(s.choosing && s.level == 2 && s.xp == 9 && s.shot_interval == 54 && s.shot_ticks == 54);
+    assert(sim_choose_upgrade(&s, SIM_UPGRADE_SPEED));
+    assert(!s.choosing && s.level == 3 && s.xp == 4 && s.xp_next == 7 && s.move_speed == 72);
+    sim_advance(&s, (sim_input){1, 0}, .25);
+    near(s.x, -62, .0002);
+    s.xp = s.xp_next; s.choosing = true; s.shot_interval = SIM_MIN_SHOT_TICKS;
+    frozen = s;
+    assert(!sim_choose_upgrade(&s, SIM_UPGRADE_ATTACK));
+    assert(memcmp(&s, &frozen, sizeof s) == 0); /* Capped choice consumes nothing. */
+
+    s = fixture(); s.x = -24;
+    s.gems[0] = (sim_gem){24, 0, 1, true};
+    s.gems[1] = (sim_gem){-104, 48, 1, true};
+    ticks(&s, 120);
+    assert(s.gems[0].x == 24 && s.gems[1].x == -104 && s.xp == 0);
+    s.x = -21; s.y = 8;
+    s.gems[0] = (sim_gem){-8, 24, 1, true}; /* In radius, but blocked across a wall corner. */
+    ticks(&s, 10);
+    assert(s.gems[0].x == -8 && s.gems[0].y == 24 && s.xp == 0);
+
+    s = fixture(); s.shot_ticks = 1000000;
+    for (int i = 0; i < SIM_MAX_GEMS; ++i)
+        s.gems[i] = (sim_gem){-104, 48, 1, true};
+    s.enemies[0] = (sim_enemy){-48, 0, 1, true};
+    s.bullets[0] = (sim_bullet){-48, 0, 0, 0, 240, true};
+    ticks(&s, 1);
+    assert(gem_value(&s) == SIM_MAX_GEMS + 1 && s.xp == 0); /* Full pool merges, no lost XP. */
+    s.dead = true; s.choosing = true; s.xp = 10;
+    assert(!sim_choose_upgrade(&s, SIM_UPGRADE_DAMAGE));
+    sim_init(&s);
+    assert(gem_value(&s) == 0 && !s.choosing && s.xp == 0 && s.level == 1);
+    assert(s.damage == 1 && s.shot_interval == 60 && s.move_speed == 64);
+}
+
 int main(int argc, char **argv) {
     if (argc == 2) {
         sim_state state;
@@ -382,6 +486,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[1], "negative-infinite")) sim_advance(&state, (sim_input){0, 0}, -INFINITY);
         else if (!strcmp(argv[1], "axis-x")) sim_advance(&state, (sim_input){2, 0}, 0);
         else if (!strcmp(argv[1], "axis-y")) sim_advance(&state, (sim_input){0, -2}, 0);
+        else if (!strcmp(argv[1], "upgrade-negative")) sim_choose_upgrade(&state, -1);
+        else if (!strcmp(argv[1], "upgrade-range")) sim_choose_upgrade(&state, SIM_UPGRADE_COUNT);
         else return 2;
         return 0;
     }
@@ -397,6 +503,7 @@ int main(int argc, char **argv) {
     hits_and_lifetime();
     saturation_and_death();
     combat_timing();
+    progression();
     puts("simulation assertions passed");
     return 0;
 }

@@ -104,6 +104,13 @@ __attribute__((export_name("release_keys"))) void platform_release_keys(void) {
   event(&e);
 }
 
+__attribute__((export_name("choose_upgrade"))) void platform_choose_upgrade(int option) {
+  assert(option >= 0 && option < 3);
+  sapp_event e = {.type = SAPP_EVENTTYPE_KEY_DOWN,
+                  .key_code = (sapp_keycode)(SAPP_KEYCODE_1 + option)};
+  event(&e);
+}
+
 __attribute__((export_name("retry"))) void platform_retry(void) {
   sapp_event e = {.type = SAPP_EVENTTYPE_KEY_DOWN, .key_code = SAPP_KEYCODE_R};
   event(&e);

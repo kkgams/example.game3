@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <float.h>
+#include <limits.h>
 
 uint8_t sim_tile(int x, int y) {
     if (x <= 0 || y <= 0 || x >= SIM_WIDTH - 1 || y >= SIM_HEIGHT - 1 ||
@@ -18,7 +19,36 @@ bool sim_solid(int x, int y) {
 void sim_init(sim_state *state) {
     assert(state);
     *state = (sim_state){ .x = -80.0f, .y = 0.0f, .accumulator = 0.0,
-        .hp = SIM_MAX_HP, .spawn_ticks = SIM_FIRST_SPAWN_TICKS };
+        .hp = SIM_MAX_HP, .spawn_ticks = SIM_FIRST_SPAWN_TICKS,
+        .level = 1, .xp_next = 3, .damage = 1,
+        .shot_interval = SIM_SHOT_TICKS, .move_speed = SIM_SPEED };
+}
+
+bool sim_choose_upgrade(sim_state *state, int option) {
+    assert(state && option >= 0 && option < SIM_UPGRADE_COUNT);
+    if (state->dead || !state->choosing) return false;
+    if (option == SIM_UPGRADE_ATTACK && state->shot_interval == SIM_MIN_SHOT_TICKS) return false;
+    assert(state->xp >= state->xp_next && state->xp_next <= INT_MAX - 2 && state->level < INT_MAX);
+    switch (option) {
+    case SIM_UPGRADE_DAMAGE:
+        assert(state->damage < INT_MAX);
+        ++state->damage;
+        break;
+    case SIM_UPGRADE_ATTACK:
+        state->shot_interval -= 6;
+        if (state->shot_interval < SIM_MIN_SHOT_TICKS) state->shot_interval = SIM_MIN_SHOT_TICKS;
+        if (state->shot_ticks > state->shot_interval) state->shot_ticks = state->shot_interval;
+        break;
+    case SIM_UPGRADE_SPEED:
+        state->move_speed += 8;
+        break;
+    }
+    state->xp -= state->xp_next;
+    state->xp_next += 2;
+    ++state->level;
+    state->choosing = state->xp >= state->xp_next;
+    state->accumulator = 0;
+    return true;
 }
 
 /* Sweep the leading face against authored solid tiles. X then Y gives wall
@@ -202,9 +232,49 @@ static void shoot(sim_state *state) {
         float length = __builtin_sqrtf(nearest);
         float scale = length > 0 ? 160.0f / length : 0;
         state->bullets[i] = (sim_bullet){state->x, state->y, dx * scale, dy * scale, SIM_BULLET_TICKS, true};
-        state->shot_ticks = SIM_SHOT_TICKS;
+        state->shot_ticks = state->shot_interval;
         return;
     }
+}
+
+static void drop_gem(sim_state *state, float x, float y) {
+    int nearest = -1;
+    float distance = FLT_MAX;
+    for (int i = 0; i < SIM_MAX_GEMS; ++i) {
+        sim_gem *gem = &state->gems[i];
+        if (!gem->active) {
+            *gem = (sim_gem){x, y, 1, true};
+            return;
+        }
+        float dx = gem->x - x, dy = gem->y - y;
+        float d = dx * dx + dy * dy;
+        if (d < distance) { nearest = i; distance = d; }
+    }
+    // Pool saturation is expected: merge the value into the nearest gem
+    // instead of dropping XP or allocating an unbounded number of pickups.
+    assert(nearest >= 0 && state->gems[nearest].value < INT_MAX);
+    ++state->gems[nearest].value;
+}
+
+static void collect_gems(sim_state *state) {
+    for (int i = 0; i < SIM_MAX_GEMS; ++i) {
+        sim_gem *gem = &state->gems[i];
+        if (!gem->active) continue;
+        float dx = state->x - gem->x, dy = state->y - gem->y;
+        float distance = __builtin_sqrtf(dx * dx + dy * dy);
+        if (distance > SIM_MAGNET_RADIUS ||
+            wall_hit(gem->x, gem->y, dx, dy, SIM_GEM_HALF) <= 1) continue;
+        float step = (float)(96 * SIM_STEP);
+        if (distance <= SIM_PLAYER_HALF + SIM_GEM_HALF + step) {
+            assert(gem->value > 0 && state->xp <= INT_MAX - gem->value);
+            state->xp += gem->value;
+            gem->active = false;
+        } else {
+            gem->x += dx * step / distance;
+            gem->y += dy * step / distance;
+        }
+    }
+    state->choosing = state->xp >= state->xp_next;
 }
 
 static void projectiles(sim_state *state) {
@@ -229,7 +299,14 @@ static void projectiles(sim_state *state) {
             bullet->active = false;
             if (target >= 0) {
                 sim_enemy *enemy = &state->enemies[target];
-                if (--enemy->hp == 0) { enemy->active = false; ++state->kills; }
+                assert(state->damage > 0);
+                enemy->hp -= state->damage;
+                if (enemy->hp <= 0) {
+                    enemy->hp = 0;
+                    enemy->active = false;
+                    ++state->kills;
+                    drop_gem(state, enemy->x, enemy->y);
+                }
             }
         } else { bullet->x += dx; bullet->y += dy; }
         --bullet->ticks_left;
@@ -263,11 +340,11 @@ void sim_advance(sim_state *state, sim_input input, double elapsed) {
     assert(input.x >= -1 && input.x <= 1 && input.y >= -1 && input.y <= 1);
     /* This rejects NaN and both infinities without a platform math library. */
     assert(elapsed >= 0.0 && elapsed <= DBL_MAX);
-    if (state->dead) return;
+    if (state->dead || state->choosing) return;
     if (elapsed > 0.25) elapsed = 0.25;
     state->accumulator += elapsed;
     const float diagonal = 0.7071067811865475244f;
-    const float step = (float)(SIM_SPEED * SIM_STEP) *
+    const float step = (float)(state->move_speed * SIM_STEP) *
         ((input.x != 0 && input.y != 0) ? diagonal : 1.0f);
     /* Allow only rounding-scale slack, so rational frame partitions consume
        the same ticks (e.g. 144 frames of 1/144 second versus 30 of 1/30). */
@@ -276,8 +353,9 @@ void sim_advance(sim_state *state, sim_input input, double elapsed) {
         move_x(&state->x, state->y, SIM_PLAYER_HALF, input.x * step);
         move_y(state->x, &state->y, SIM_PLAYER_HALF, input.y * step);
         combat(state);
+        if (!state->dead) collect_gems(state);
         state->accumulator -= SIM_STEP;
         if (state->accumulator < 0.0) state->accumulator = 0.0;
-        if (state->dead) { state->accumulator = 0.0; break; }
+        if (state->dead || state->choosing) { state->accumulator = 0.0; break; }
     }
 }
