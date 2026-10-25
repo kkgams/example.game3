@@ -1,0 +1,40 @@
+{
+  "type": "none",
+  "bullets": [
+    {
+      "direction": {
+        "type": "aim",
+        "value": 0
+      },
+      "speed": {
+        "type": "absolute",
+        "value": 1
+      }
+    }
+  ],
+  "actions": [
+    [
+      {
+        "repeat": {
+          "times": 1000,
+          "actionRef": 1
+        }
+      }
+    ],
+    [
+      {
+        "fireRef": 0
+      },
+      {
+        "wait": 100
+      }
+    ]
+  ],
+  "fires": [
+    {
+      "direction": { "type": "aim", "value": 0 },
+      "speed": { "type": "absolute", "value": 1 },
+      "bulletRef": 0
+    }
+  ]
+}

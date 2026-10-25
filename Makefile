@@ -4,6 +4,7 @@ ZIG ?= zig
 PYTHON ?= python3
 CURL ?= curl
 PORT ?= 8816
+GAMS_HOST_BIN ?= tools/gams.app/Contents/MacOS/gams
 BUILD := build.nosync
 SOKOL_URL ?= https://raw.githubusercontent.com/floooh/sokol/master
 SHDC_URL ?= https://raw.githubusercontent.com/floooh/sokol-tools-bin/master/bin
@@ -33,7 +34,7 @@ GAME_SOURCES := game/main.c game/sim.c game/patterns.c game/bulletml/bulletml.c 
 COMMON := $(GAME_SOURCES) game/app.h game/sim.h game/patterns.h game/bulletml/bulletml.h game/font.h game/render/render2d.h $(SHADER_HEADERS) $(SOKOL_HEADERS)
 WEB_HEADERS := $(shell find game/web/wasm-include -type f)
 
-.PHONY: all deps sokol sokol-shdc native web run play serve test smoke-native clean shaders
+.PHONY: all deps sokol sokol-shdc native web run play serve test smoke-native clean shaders content
 all: native web
 deps: sokol sokol-shdc
 sokol: $(SOKOL_HEADERS)
@@ -119,6 +120,11 @@ smoke-native: native
 	./$(BUILD)/triangle --smoke-test
 play serve: web
 	$(PYTHON) -m http.server $(PORT) --bind 127.0.0.1 --directory $(BUILD)/web
+
+# Optional authoring lane: open the Project in GAMS first to install its Units.
+# Produces a pack only; game builds still use the C pattern fixture.
+content:
+	GAMS_HOST_BIN="$(GAMS_HOST_BIN)" node content/gams/build.mjs
 
 test: web $(BUILD)/test/scene.wasm
 	node --test test/*.test.mjs

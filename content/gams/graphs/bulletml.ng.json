@@ -1,0 +1,36 @@
+[
+  {
+    "id": 1, "kind": 4, "x": 80, "y": 80, "name": "Pattern sources",
+    "inputs": [],
+    "outputs": [{ "id": 1, "name": "paths", "value": "[\"content/bulletml/ranger-fan.bulletml.json\",\"content/bulletml/aim.bulletml.json\"]" }]
+  },
+  {
+    "id": 2, "kind": 2, "x": 320, "y": 80, "name": "BulletML Slots JSON",
+    "codePath": "content/gams/nodes/bulletml-slots-json.lua",
+    "inputs": [{ "id": 1, "name": "paths", "srcNodeId": 1, "srcOutputId": 1 }],
+    "outputs": [{ "id": 1, "name": "slots_json", "value": null }]
+  },
+  {
+    "id": 3, "kind": 4, "x": 80, "y": 280, "name": "Pack paths",
+    "inputs": [],
+    "outputs": [
+      { "id": 1, "name": "schemaPath", "value": "\"content/gams/schema/bulletml.rspk.json\"" },
+      { "id": 2, "name": "outputPath", "value": "\"build.nosync/content/bulletml.rspk\"" }
+    ]
+  },
+  {
+    "id": 4, "kind": 2, "x": 560, "y": 80, "name": "Build BulletML Respack",
+    "codePath": "content/gams/nodes/build-bulletml-respack.lua",
+    "inputs": [
+      { "id": 1, "name": "schemaPath", "srcNodeId": 3, "srcOutputId": 1 },
+      { "id": 2, "name": "slotsJson", "srcNodeId": 2, "srcOutputId": 1 },
+      { "id": 3, "name": "outputPath", "srcNodeId": 3, "srcOutputId": 2 }
+    ],
+    "outputs": [{ "id": 1, "name": "path", "value": null }]
+  },
+  {
+    "id": 5, "kind": 1, "x": 800, "y": 80, "name": "BulletML pack",
+    "inputs": [{ "id": 1, "name": "path", "srcNodeId": 4, "srcOutputId": 1 }],
+    "outputs": []
+  }
+]

@@ -7,16 +7,36 @@ shared tilemap/sprite pipelines and procedural textures. Movement, tile collisio
 four ordinary enemy archetypes, automatic aimed shots, contact damage, XP gems,
 health/kills/level/XP/timer HUD, paused level-up choices, a three-wave 90-second
 countdown, a two-phase final boss, optional orbiting blades, win/loss and R
-restart are implemented. Authored scenarios and further weapons are not. A minimal gams.json provides
-Files/Code editing and opens in GAMS (owner-verified); the game renderer is not
+restart are implemented. Authored scenarios and further weapons are not.
+gams.json now adds Content Files, BulletML preview and a Nodegraph packaging
+pipeline. The original minimal config was owner-verified; expanded authoring
+has CLI/engine checks, with native GUI checks pending. The game renderer is not
 embedded in a Host View.
 
 Planned game direction: survivor-style free movement, automatic attacks and XP
 upgrades, authored encounters and a final boss, with title/game/result/credits.
-Decoder and director resources are created using GAMS and are explicitly deferred
-to a separate task; do not port the old generated decoders or director now.
+BulletML authoring and pack generation now use GAMS. The game still consumes
+its C pattern fixture: loading authored packs into the C IR, balance/wave data,
+and director integration remain separate slices. Do not port old generated Odin
+decoders or the director as part of authoring setup.
 
 Ownership:
+- gams.json: explicitly pinned published Unit sources. Existing FS/Layout and
+  six shell UI Services/theme are retained; add Lua/respack 0.2.0, BulletML View
+  0.2.0 and Nodegraph/internal-node editor 0.1.0. No unpublished sibling Unit
+  source is substituted. Exact known filenames route to BulletML/Nodegraph;
+  current Files matches basename/final extension, not compound-extension globs.
+- content/: canonical authored pattern JSON plus content/gams graph, Lua nodes,
+  schema, compiler and optional CLI launcher. Root ng/compile-graph.lua is the
+  compatibility entry hard-coded by the released View, forwarding to the single
+  content-owned compiler. See content/README.md and PROVENANCE.md.
+  make content runs the same graph/compiler through the installed GAMS CLI and
+  cached configured FS/Lua/respack Units. It creates/validates a one-slot RSPK
+  under build.nosync/content, never a decoder or game-source overwrite. GAMS
+  install/cache remains Host-owned. Future cache additions are ignored; older
+  already-tracked cache files are unchanged, not canonical editable sources.
+  Native 2.0.6 CLI produced two patterns/344 bytes with published components;
+  preview engine checks passed. Three-pane GUI/edit-save/Run need owner smoke.
 - game/main.c: procedural textures, shared keyboard state and simulation/render
   integration; rendered tiles come from the collision map source. Reward UI uses
   four 2x2 cards before blade unlock, then six 3x2 cards. Bordered cards share

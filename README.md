@@ -12,8 +12,11 @@ The HUD shows time remaining, wave, health, kills, level and XP, plus boss healt
 during the duel. After winning or dying, press **R** to restart.
 Assets, the map and spawn timing remain procedural/hand-authored.
 
-The minimal `gams.json` Project opens in GAMS (owner-verified). The rendering
-fixture still runs standalone, not embedded in a GAMS View.
+`gams.json` now configures Content Files, BulletML preview and a Nodegraph pack
+pipeline, with scripts/assets under `content/`. The original Files/Code-only
+setup was owner-verified; the expanded setup has CLI/engine checks and awaits
+native GUI verification after reopening the Project. The game still runs
+standalone, not embedded in a GAMS View.
 
 ## Build and run
 
@@ -31,6 +34,7 @@ make run         # build and launch the native window
 make             # build both targets
 make test        # dependency, shader pipeline, native recipe and WASM ABI tests
 make smoke-native # draw three real Metal frames, then exit (macOS GUI session)
+make content     # optional GAMS graph -> respack, after installing its Units
 make clean       # remove generated output
 ```
 
@@ -80,7 +84,31 @@ build/test, and `make native`. Hosted Linux execution and actual publication
 remain unverified until the first authorized push. Adding this workflow does not
 change repository settings or perform a deployment by itself.
 
-## Optional GAMS Host
+## GAMS authoring (optional)
+
+See [content setup and boundaries](content/README.md). The canonical tree is
+`content/bulletml/` for pattern JSON and `content/gams/` for Project-owned graph,
+node scripts, schema and compiler. `ng/compile-graph.lua` is only a compatibility
+forwarder required by the released Nodegraph View; no Host/View source is copied.
+
+Reopen this Project in GAMS to register the new published Units. The default layout
+opens Content Files, the ranger fan preview, and the BulletML packaging graph.
+Edit pattern JSON in GAMS and Run `content/gams/graphs/bulletml.ng.json` to write
+`build.nosync/content/bulletml.rspk`. The graph packs the ranger and an aimed-shot
+example and generates no decoder. CLI equivalent after Unit installation:
+
+```sh
+make content
+GAMS_HOST_BIN=/Applications/GAMS.app/Contents/MacOS/gams make content
+```
+
+**This pack is not consumed by the game yet:** `game/patterns.c` remains active.
+The next handoff is pack-to-C-IR loading, not another runtime rewrite. Native/web
+and Pages builds do not require GAMS; ordinary tests validate authoring contracts
+without downloading Units. Published Views/plugins are explicit release URLs in
+`gams.json`; GAMS owns their installation/cache. No custom installer is added.
+
+### Optional GAMS Host download
 
 ```sh
 make tools/gams.app  # download the latest kkgams/gams release only if absent
@@ -291,7 +319,7 @@ recorded separately above; generated decoders/director remain absent. The origin
 is retained as a shader-generation test fixture, not drawn by the app. Output
 filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
 
-- `make test`: passed (53 checks, including 35 VM invalid-input subtests). Includes standalone C movement/collision
+- `make test`: passed (68 checks, including 35 VM invalid-input subtests). Includes standalone C movement/collision
   assertions (movement, fixed-step timing, collision, spawning, chase paths,
   targeting/line of sight, swept projectile hits, pool saturation, contact damage,
   death/reset, XP drops/attraction, blocked pickups, pool merging, exact collection,
@@ -320,7 +348,14 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   timing/cardinal aim, actual player hits, approach/hold/retreat, blocked LOS and
   reacquisition, pool saturation without replay, pause/frame partitions, waves,
   XP, boss entry and reset. Real WASM tests verify spawn initialization, warning,
-  paused VM, emitted shots and a real kill-to-blue-gem path.
+  paused VM, emitted shots and a real kill-to-blue-gem path. Fifteen authoring
+  checks cover Unit sources/routes, renderer config, graph references, pattern
+  JSON parity, compiler shim, cache names and RSPK header/error diagnostics.
+- GAMS authoring lane: the installed 2.0.6 Host CLI and published FS/Lua/respack
+  components compiled and executed the graph to a 344-byte, two-pattern pack;
+  repeat/fresh-directory outputs matched, and invalid destinations failed.
+  Both JSON assets ran in the released BulletML preview engine. Native GUI
+  layout, preview editing/save and the Run button await owner verification.
   Real enemy-kill-to-render checks ensure chasers produce purple, runners blue,
   and brutes gold without requiring pool-overflow merges.
   That last test uses invulnerability to isolate flow from balance, not to claim
@@ -364,8 +399,9 @@ The prototype WebGL bridge and freestanding allocator have limitations; see
 `CONTEXT.md`. Start here with verified rendering before expanding gameplay.
 GAMS game integration is a later milestone. The minimal `gams.json` and installed
 Units provide Files/Code editing; there is no embedded game View, art pack or
-GAMS release workflow. Decoder/director generation through GAMS is a separate
-task. The standalone Pages deployment branch is `release`; origin is
+GAMS Unit release workflow. BulletML authoring/pack generation is configured;
+C resource loading, game balance data and director integration remain separate
+tasks. The standalone Pages deployment branch is `release`; origin is
 `git@github.com:kkgams/example.game3.git`. No hosted repository creation or push
 has been performed by this task.
 Previous experiments and the source gams3 checkout remain unchanged.

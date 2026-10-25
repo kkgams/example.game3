@@ -1,7 +1,9 @@
 {
   "plugins": [
     "https://github.com/kkgams/plugin.fs/releases/download/v0.2.0/plugin.fs.wasm",
-    "https://github.com/kkgams/plugin.layout/releases/download/v0.2.0/plugin.layout.wasm"
+    "https://github.com/kkgams/plugin.layout/releases/download/v0.2.0/plugin.layout.wasm",
+    "https://github.com/kkgams/plugin.lua/releases/download/v0.2.0/plugin.lua.wasm",
+    "https://github.com/kkgams/plugin.respack/releases/download/v0.2.0/plugin.respack.wasm"
   ],
   "ui": {
     "keys": [
@@ -38,7 +40,7 @@
       "ui-layout": {
         "url": "https://github.com/kkgams/ui-service.layout/releases/download/v0.2.0/ui-service.layout-0.2.0.zip#ui-plugins/layout.js",
         "config": {
-          "layout": "<view-files data-root=\".\" />"
+          "layout": "<view-files data-root=\"content\" /><view-bullet setup=\"0:h:70\" data-source=\"content/bulletml/ranger-fan.bulletml.json\" /><view-ng setup=\"1:v:50\" data-source=\"content/gams/graphs/bulletml.ng.json\" />"
         }
       }
     },
@@ -50,13 +52,197 @@
         "internal": false,
         "config": {
           "open": {
+            "ranger-fan.bulletml.json": "view-bullet",
+            "aim.bulletml.json": "view-bullet",
+            "bulletml.ng.json": "view-ng",
             "json": "view-code",
+            "lua": "view-code",
             "md": "view-code",
             "mjs": "view-code",
             "css": "view-code",
             "html": "view-code",
             "default": "files-default"
           }
+        }
+      },
+      "view-bullet": {
+        "url": "https://github.com/kkgams/view.bullet/releases/download/v0.2.0/view.bullet-0.2.0.zip#views/view-bullet.js",
+        "label": "BulletML",
+        "group": "Content",
+        "internal": false,
+        "config": {
+          "defaultSource": "content/bulletml/ranger-fan.bulletml.json"
+        }
+      },
+      "view-ng": {
+        "url": "https://github.com/kkgams/view.ng/releases/download/v0.1.0/view.ng-0.1.0.zip#views/view-ng.js",
+        "label": "BulletML Pipeline",
+        "group": "Content",
+        "internal": false,
+        "defaultSource": "content/gams/graphs/bulletml.ng.json",
+        "config": {
+          "background": [
+            0.043,
+            0.098,
+            0.133,
+            1
+          ],
+          "renderer": {
+            "node": {
+              "width": 180,
+              "headerHeight": 30,
+              "portRowHeight": 28,
+              "padding": 12,
+              "radius": 8,
+              "borderWidth": 2,
+              "portRadius": 6
+            },
+            "edge": {
+              "width": 2,
+              "selectedWidth": 4,
+              "curveOffset": 48
+            },
+            "text": {
+              "font": "sans-serif",
+              "size": 13
+            },
+            "theme": {
+              "node": [
+                0.098,
+                0.18,
+                0.231,
+                1
+              ],
+              "nodeHover": [
+                0.133,
+                0.251,
+                0.322,
+                1
+              ],
+              "nodeSelected": [
+                0.114,
+                0.306,
+                0.4,
+                1
+              ],
+              "nodeBorder": [
+                0.275,
+                0.424,
+                0.518,
+                1
+              ],
+              "header": [
+                0.165,
+                0.314,
+                0.396,
+                1
+              ],
+              "requiredHeader": [
+                0.224,
+                0.412,
+                0.533,
+                1
+              ],
+              "text": [
+                0.839,
+                0.925,
+                0.973,
+                1
+              ],
+              "textMuted": [
+                0.565,
+                0.682,
+                0.753,
+                1
+              ],
+              "port": [
+                0.173,
+                0.788,
+                0.667,
+                1
+              ],
+              "portHover": [
+                0.29,
+                0.78,
+                1,
+                1
+              ],
+              "edge": [
+                0.275,
+                0.424,
+                0.518,
+                0.95
+              ],
+              "edgeSelected": [
+                0.29,
+                0.78,
+                1,
+                1
+              ],
+              "edgePreviewInvalid": [
+                0.922,
+                0.325,
+                0.325,
+                1
+              ]
+            }
+          },
+          "layout": {
+            "gridOriginX": 80,
+            "gridOriginY": 58,
+            "gridStepX": 240,
+            "gridStepY": 112
+          }
+        }
+      },
+      "view-ng-node": {
+        "url": "https://github.com/kkgams/view.ng-node/releases/download/v0.1.0/view.ng-node-0.1.0.zip#views/view-ng-node.js",
+        "label": "Node Editor",
+        "internal": true,
+        "config": {
+          "presets": [
+            {
+              "name": "BulletML Slots JSON",
+              "kind": "code",
+              "codePath": "content/gams/nodes/bulletml-slots-json.lua",
+              "group": "BulletML",
+              "inputs": [
+                {
+                  "name": "paths",
+                  "defaultValue": "[\"content/bulletml/ranger-fan.bulletml.json\"]"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "slots_json"
+                }
+              ]
+            },
+            {
+              "name": "Build BulletML Respack",
+              "kind": "code",
+              "codePath": "content/gams/nodes/build-bulletml-respack.lua",
+              "group": "BulletML",
+              "inputs": [
+                {
+                  "name": "schemaPath",
+                  "defaultValue": "\"content/gams/schema/bulletml.rspk.json\""
+                },
+                {
+                  "name": "slotsJson"
+                },
+                {
+                  "name": "outputPath",
+                  "defaultValue": "\"build.nosync/content/bulletml.rspk\""
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "path"
+                }
+              ]
+            }
+          ]
         }
       },
       "view-code": {

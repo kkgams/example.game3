@@ -1,0 +1,188 @@
+{
+  "package": "main",
+  "odin": {
+    "package": "decoder2"
+  },
+  "data": ["BulletPatterns"],
+  "types": {
+    "BulletPatterns": {
+      "type": "vector",
+      "value": "BulletPattern"
+    },
+    "BulletPattern": {
+      "type": "struct",
+      "fields": {
+        "type": "PatternType",
+        "bullets": {
+          "type": "vector",
+          "value": "Bullet"
+        },
+        "actions": {
+          "type": "vector",
+          "value": "Action"
+        },
+        "fires": {
+          "type": "vector",
+          "value": "Fire"
+        }
+      }
+    },
+    "PatternType": {
+      "type": "enum",
+      "value": ["none", "vertical", "horizontal"]
+    },
+
+    "Expr": {
+      "type": "oneof",
+      "value": ["ExprNumber", "ExprString"]
+    },
+    "ExprNumber": "f64",
+    "ExprString": "string",
+
+    "Ref": {
+      "type": "oneof",
+      "value": ["RefIndex", "RefWithParams"]
+    },
+    "RefIndex": "u32",
+    "RefWithParams": {
+      "type": "struct",
+      "fields": {
+        "ref": "u32",
+        "params": {
+          "type": "vector",
+          "value": "Expr",
+          "default": []
+        }
+      }
+    },
+
+    "Bullet": {
+      "type": "struct",
+      "fields": {
+        "direction": {
+          "type": "Direction",
+          "default": {
+            "type": "absolute",
+            "value": 0
+          }
+        },
+        "speed": {
+          "type": "Speed",
+          "default": {
+            "type": "absolute",
+            "value": 1
+          }
+        },
+        "actionRefs": {
+          "type": "vector",
+          "value": "Ref",
+          "default": []
+        }
+      }
+    },
+
+    "Action": {
+      "type": "vector",
+      "value": "Command"
+    },
+    "Command": {
+      "type": "oneof",
+      "value": ["fireRef", "actionRef", "wait", "repeat", "vanish", "changeDirection", "changeSpeed", "accel"]
+    },
+    "fireRef": "Ref",
+    "actionRef": "Ref",
+    "wait": "Expr",
+    "vanish": "bool",
+    "repeat": {
+      "type": "struct",
+      "fields": {
+        "times": "Expr",
+        "actionRef": "Ref"
+      }
+    },
+    "changeDirection": {
+      "type": "struct",
+      "fields": {
+        "direction": "Direction",
+        "term": "Expr"
+      }
+    },
+    "changeSpeed": {
+      "type": "struct",
+      "fields": {
+        "speed": "Speed",
+        "term": "Expr"
+      }
+    },
+    "accel": {
+      "type": "struct",
+      "fields": {
+        "horizontal": {
+          "type": "AccelValue",
+          "default": {
+            "type": "absolute",
+            "value": 0
+          }
+        },
+        "vertical": {
+          "type": "AccelValue",
+          "default": {
+            "type": "absolute",
+            "value": 0
+          }
+        },
+        "term": "Expr"
+      }
+    },
+    "AccelValue": {
+      "type": "struct",
+      "fields": {
+        "type": "SpeedType",
+        "value": "Expr"
+      }
+    },
+
+    "Fire": {
+      "type": "struct",
+      "fields": {
+        "direction": {
+          "type": "Direction",
+          "default": {
+            "type": "absolute",
+            "value": 0
+          }
+        },
+        "speed": {
+          "type": "Speed",
+          "default": {
+            "type": "absolute",
+            "value": 1
+          }
+        },
+        "bulletRef": "Ref"
+      }
+    },
+    "Direction": {
+      "type": "struct",
+      "fields": {
+        "type": "DirectionType",
+        "value": "Expr"
+      }
+    },
+    "DirectionType": {
+      "type": "enum",
+      "value": ["aim", "absolute", "relative", "sequence"]
+    },
+    "Speed": {
+      "type": "struct",
+      "fields": {
+        "type": "SpeedType",
+        "value": "Expr"
+      }
+    },
+    "SpeedType": {
+      "type": "enum",
+      "value": ["absolute", "relative", "sequence"]
+    }
+  }
+}

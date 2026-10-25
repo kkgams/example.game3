@@ -3,3 +3,4 @@ build.nosync/
 zig-out/
 .DS_Store
 tools/
+gams_modules/
