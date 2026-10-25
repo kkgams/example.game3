@@ -44,6 +44,42 @@ Missing WASM, unsupported WebGL2,
 Sokol errors and context loss appear explicitly in the status bar.
 Reload cleans up GPU resources and instantiates fresh WASM memory.
 
+## GitHub Pages
+
+`.github/workflows/pages.yml` builds and tests on pushes to **release** and PRs
+into release. Successful release pushes upload only `build.nosync/web/` and
+publish through GitHub's `github-pages` environment. PRs never deploy.
+Zig is pinned to **0.17.0**, Node to **22**, and the runner to Ubuntu 24.04.
+The workflow runs `make test`, which builds the web game before testing it.
+Native Metal and headed Chrome checks remain local, not part of Linux CI.
+
+One-time repository setup before the first deployment:
+
+1. Open **Settings → Pages → Build and deployment** and choose **GitHub Actions**
+   as the source.
+2. If the `github-pages` environment restricts deployment branches, allow
+   **release**. Existing environment approval rules still apply.
+3. Commit the workflow and push release. Follow **Actions → Build and deploy web
+   game**; its deployment job reports the site URL.
+
+The expected default address is <https://kkgams.github.io/example.game3/>.
+All scripts/WASM use relative URLs, so the repository subpath needs no base-URL
+rewrite. Only the HTML, runner, GL bridge and production WASM are uploaded;
+test staging hooks, native binaries, source and tools are excluded. The Pages
+artifact test rejects stray debug files in the web output.
+
+`workflow_dispatch` also permits a manual build; deployment is still restricted
+to release. GitHub exposes the manual-run UI once the workflow is present on the
+repository's default branch. Deployments are serialized without cancelling an
+active run; newer queued pushes replace older queued runs. Build jobs get only
+read access; Pages write/OIDC permissions are confined to the deployment job.
+No PAT, deployment key or additional repository secret is required.
+
+Preparation was validated locally with actionlint, `make test`, a fresh-workspace
+build/test, and `make native`. Hosted Linux execution and actual publication
+remain unverified until the first authorized push. Adding this workflow does not
+change repository settings or perform a deployment by itself.
+
 ## Optional GAMS Host
 
 ```sh
@@ -222,7 +258,7 @@ pack, BulletML or gameplay systems were imported. The original triangle shader
 is retained as a shader-generation test fixture, not drawn by the app. Output
 filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
 
-- `make test`: passed (15 Node tests). Includes standalone C movement/collision
+- `make test`: passed (16 Node tests). Includes standalone C movement/collision
   assertions (movement, fixed-step timing, collision, spawning, chase paths,
   targeting/line of sight, swept projectile hits, pool saturation, contact damage,
   death/reset, XP drops/attraction, blocked pickups, pool merging, exact collection,
@@ -243,7 +279,9 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   and body bounds at 320x240, portrait, ultrawide and tiny framebuffer sizes;
   keyboard/click parity, gap/outside/MAX rejection, and native logical-point vs
   HiDPI framebuffer coordinates. Browser runner tests cover CSS-relative pointer
-  coordinates and ignore paused/hidden/modified/secondary clicks.
+  coordinates and ignore paused/hidden/modified/secondary clicks. Pages checks
+  verify the production artifact file set and asset resolution under a repository
+  subpath, including WASM validity.
   Real enemy-kill-to-render checks ensure chasers produce purple, runners blue,
   and brutes gold without requiring pool-overflow merges.
   That last test uses invulnerability to isolate flow from balance, not to claim
@@ -279,13 +317,15 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
 `game/` is self-contained; no absolute source path is used by builds.
 `SOURCE.json` retains historical original inputs and hashes before adaptation,
 not a dependency lock. Sokol's embedded zlib notices remain intact. Source licensing/redistribution approval
-is not established; this is a local experiment, not a release.
+is not established; preparing Pages automation does not constitute new license
+clearance or a release approval.
 
 The prototype WebGL bridge and freestanding allocator have limitations; see
 `CONTEXT.md`. Start here with verified rendering before expanding gameplay.
 GAMS game integration is a later milestone. The minimal `gams.json` and installed
 Units provide Files/Code editing; there is no embedded game View, art pack or
-release workflow. Decoder/director generation through GAMS is a separate task. The independent repository uses
-`main` and origin `git@github.com:kkgams/example.game3.git`, matching sibling
-examples. No hosted repository creation or push has been performed.
+GAMS release workflow. Decoder/director generation through GAMS is a separate
+task. The standalone Pages deployment branch is `release`; origin is
+`git@github.com:kkgams/example.game3.git`. No hosted repository creation or push
+has been performed by this task.
 Previous experiments and the source gams3 checkout remain unchanged.

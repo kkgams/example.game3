@@ -81,6 +81,14 @@ Ownership:
 - game/vendor/: version-control-ready Sokol header snapshots, including official
   sokol_glue.h; embedded licenses preserved. Existing files are never downloaded
   again by ordinary builds.
+- .github/workflows/pages.yml: Ubuntu 24.04 + Zig 0.17.0 + Node 22 web build/test
+  on release pushes and PRs targeting release. Only release pushes/manual runs
+  on release may deploy build.nosync/web/ through github-pages, with Pages/OIDC
+  permissions isolated to deployment. One-time Pages source setting must be
+  GitHub Actions; existing environment approval/branch rules still apply. No
+  native build, automatic remote setting changes or secret/PAT requirement.
+  Only four production files are uploaded; Pages tests check the file set and
+  repository-subpath links. Actual hosted execution/publication awaits a push.
 - Makefile and test/: independent build and WASM/JS ABI verification, including
   timed-run and orbiting-blade regression tests. test/scene.c includes the real app in a separate
   test-only WASM for staged wave/boss/victory render checks; the production
@@ -94,7 +102,9 @@ Ownership:
   depfiles under shader-deps/.
 
 Renderer scope excludes asset loading, decoder/director generation, copied
-game1/game2 code or content, release machinery, and new rendering libraries. The original
+game1/game2 code or content, GAMS Unit release machinery, and new rendering libraries.
+Standalone Pages automation belongs to repository build/deployment tooling, not
+renderer or Host integration. The original
 absolute /game/clear-color.rgb dependency is removed for this triangle milestone.
 The JS bridge is taken from gams3's tracked examples/demo/game/web source;
 the original plugins/game Makefile's cmd/browser/util bridge path is absent.
@@ -141,6 +151,6 @@ the Host, and is not required by all/deps or standalone builds. make clean retai
 it; remove the app explicitly to fetch the latest release again.
 
 No source/distribution license approval or publication has been inferred.
-This is an independent Git repository on main with origin
+This is an independent Git repository with Pages deployment from release and origin
 git@github.com:kkgams/example.game3.git, matching sibling examples.
 Remote configuration does not create the hosted repository or authorize a push.
