@@ -13,7 +13,7 @@ test('timed run: enemy types, wave boundaries, boss phases, hostile shots, win/l
   t.after(() => rm(folder, {recursive: true, force: true}))
   const executable = path.join(folder, 'run-test')
   execFileSync(process.env.ZIG || 'zig', [
-    'cc', 'test/run.c', 'game/sim.c', '-Igame',
+    'cc', 'test/run.c', 'game/sim.c', 'game/patterns.c', 'game/bulletml/bulletml.c', '-Igame',
     '-std=c11', '-Wall', '-Wextra', '-Werror', '-o', executable,
   ], {cwd: root, encoding: 'utf8'})
   execFileSync(executable, [], {cwd: folder, encoding: 'utf8'})

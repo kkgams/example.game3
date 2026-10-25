@@ -84,6 +84,8 @@ tint by its fourth component. Strength 0 leaves source RGB unchanged.
 The original tile area occupies the first 32x32 texels; tilemap instances use
 that atlas subrectangle to preserve tile IDs. Extra cells hold an enemy, bullet,
 health pip, XP gem, bar segment, dark panel tile and authored 5x7 bitmap glyphs.
+Cells X=0/16,Y=32 hold the ranger ring and warning marker. Marker visibility
+tracks the ranger's VM warning state; pink shots reuse the hostile bullet cell.
 The free cell at X=48,Y=48 holds the orbiting blade. Visible blade positions come
 from sim_blade_position, exactly matching collision and wall clipping; no separate
 render-time clock. Blades keep the existing sprite format and shader contract.

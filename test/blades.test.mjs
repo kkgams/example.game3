@@ -13,7 +13,7 @@ test('orbiting blades: unlock/upgrades, caps, clock, sweeps, walls, cooldowns, X
   t.after(() => rm(folder, {recursive: true, force: true}))
   const executable = path.join(folder, 'blades-test')
   execFileSync(process.env.ZIG || 'zig', [
-    'cc', 'test/blades.c', 'game/sim.c', '-Igame',
+    'cc', 'test/blades.c', 'game/sim.c', 'game/patterns.c', 'game/bulletml/bulletml.c', '-Igame',
     '-std=c11', '-Wall', '-Wextra', '-Werror', '-o', executable,
   ], {cwd: root, encoding: 'utf8'})
   execFileSync(executable, [], {cwd: folder, encoding: 'utf8'})

@@ -56,6 +56,18 @@ void init(void) {
             atlas[p+3] = body ? 255 : 0;
         }
     }
+    // Ranger and warning glyph in two unused 16x16 cells.
+    for (int y = 32; y < 48; ++y) {
+        for (int x = 0; x < 32; ++x) {
+            int px = x % 16, py = y % 16;
+            int dx = px - 7, dy = py - 7, r2 = dx*dx + dy*dy;
+            bool body = x < 16 ? ((r2 >= 20 && r2 <= 42) || (dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1)) :
+                (px >= 6 && px <= 8 && ((py >= 6 && py <= 13) || (py >= 2 && py <= 3)));
+            int p = (y * 128 + x) * 4;
+            atlas[p] = atlas[p+1] = atlas[p+2] = 255;
+            atlas[p+3] = body ? 255 : 0;
+        }
+    }
     // XP gem, blade, 8x4 bar segment and solid 16x16 panel tile in unused cells.
     for (int y = 0; y < 64; ++y) {
         for (int x = 32; x < 64; ++x) {
@@ -120,7 +132,7 @@ void init(void) {
     r2_init(&state.renderer, state.atlas, state.lut);
 }
 
-enum { SPRITE_CAPACITY = 1 + SIM_MAX_ENEMIES + SIM_MAX_BULLETS + SIM_MAX_HOSTILE_BULLETS + SIM_MAX_GEMS + SIM_MAX_BLADES + 576 };
+enum { SPRITE_CAPACITY = 1 + 2 * SIM_MAX_ENEMIES + SIM_MAX_BULLETS + SIM_MAX_HOSTILE_BULLETS + SIM_MAX_GEMS + SIM_MAX_BLADES + 576 };
 _Static_assert(SPRITE_CAPACITY <= R2_MAX_SPRITES, "game sprite capacity exceeds renderer");
 
 static void add_text(r2_sprite *sprites, int *count, const char *text, float x, float y) {
@@ -320,15 +332,25 @@ void frame(double elapsed) {
         if (!enemy->active) continue;
         assert(enemy->kind >= SIM_CHASER && enemy->kind < SIM_ENEMY_KIND_COUNT);
         const float colors[SIM_ENEMY_KIND_COUNT][3] = {
-            {1,.22f,.3f}, {.6f,1,.25f}, {.3f,.65f,1}, {1,.85f,.15f},
+            {1,.22f,.3f}, {.6f,1,.25f}, {.3f,.65f,1}, {1,.85f,.15f}, {.85f,.4f,1},
         };
         float u = enemy->kind == SIM_CHASER ? .25f : .5f + (enemy->kind - 1) * .125f;
         float v = enemy->kind == SIM_CHASER ? 0 : .75f;
+        if (enemy->kind == SIM_RANGER) { u = 0; v = .5f; }
         sprites[count++] = (r2_sprite){
             .pos = {enemy->x,enemy->y}, .opacity = 1,
             .uv = {u,v,u + .125f,v + .25f},
             .color_add = {colors[enemy->kind][0],colors[enemy->kind][1],colors[enemy->kind][2],1},
         };
+        if (enemy->kind == SIM_RANGER && enemy->attack_ticks > 0) {
+            sprites[count-1].color_add[0] = 1;
+            sprites[count-1].color_add[1] = .8f;
+            sprites[count-1].color_add[2] = .2f;
+            sprites[count++] = (r2_sprite){
+                .pos = {enemy->x,enemy->y + 12}, .opacity = 1,
+                .uv = {.125f,.5f,.25f,.75f}, .color_add = {1,.65f,.15f,1},
+            };
+        }
         if (enemy->kind == SIM_BOSS) {
             boss = enemy;
             if (enemy->hp <= SIM_BOSS_HP / 2) {

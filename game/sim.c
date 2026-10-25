@@ -1,4 +1,5 @@
 #include "sim.h"
+#include "patterns.h"
 
 #include <assert.h>
 #include <float.h>
@@ -169,7 +170,7 @@ static float wall_hit(float x, float y, float dx, float dy, float half) {
 
 static bool spawn(sim_state *state, sim_enemy_kind kind) {
     assert(kind >= SIM_CHASER && kind < SIM_ENEMY_KIND_COUNT);
-    const int health[] = {2, 1, 6, SIM_BOSS_HP};
+    const int health[] = {2, 1, 6, SIM_BOSS_HP, 4};
     int slot = 0;
     while (slot < SIM_MAX_ENEMIES && state->enemies[slot].active) ++slot;
     if (slot == SIM_MAX_ENEMIES) return false;
@@ -196,6 +197,7 @@ static bool spawn(sim_state *state, sim_enemy_kind kind) {
                 .x = px, .y = py, .hp = health[kind], .active = true,
                 .kind = kind, .attack_ticks = kind == SIM_BOSS ? 240 : 0,
             };
+            if (kind == SIM_RANGER) bm_init(&state->enemies[slot].pattern, &sim_ranger_pattern, 0);
             return true;
         }
     }
@@ -238,6 +240,18 @@ static void chase(sim_state *state) {
         const int x = tile_x(enemy->x), y = tile_y(enemy->y);
         assert(!sim_solid(x, y));
         float tx = state->x, ty = state->y;
+        if (enemy->kind == SIM_RANGER) {
+            float rx = state->x - enemy->x, ry = state->y - enemy->y;
+            float range = __builtin_sqrtf(rx * rx + ry * ry);
+            bool visible = wall_hit(enemy->x, enemy->y, rx, ry, SIM_BULLET_HALF) > 1;
+            if (visible && range >= 48 && range <= 80) continue; // Hold firing distance.
+            if (visible && range > 0 && range < 48) {
+                float retreat = (float)(22 * SIM_STEP) / range;
+                move_x(&enemy->x, enemy->y, SIM_ENEMY_HALF, -rx * retreat);
+                move_y(enemy->x, &enemy->y, SIM_ENEMY_HALF, -ry * retreat);
+                continue;
+            }
+        }
         if (distance[y][x] != 0) {
             tx = center_x(x); ty = center_y(y);
             for (int dir = 0; dir < 4; ++dir) {
@@ -252,7 +266,7 @@ static void chase(sim_state *state) {
         }
         float vx = tx - enemy->x, vy = ty - enemy->y;
         const float length = __builtin_sqrtf(vx * vx + vy * vy);
-        const float speeds[] = {28, 44, 18, 24};
+        const float speeds[] = {28, 44, 18, 24, 22};
         assert(enemy->kind >= SIM_CHASER && enemy->kind < SIM_ENEMY_KIND_COUNT);
         const float step = (float)(speeds[enemy->kind] * SIM_STEP);
         if (length > step) { vx *= step / length; vy *= step / length; }
@@ -343,8 +357,9 @@ static void hit_enemy(sim_state *state, sim_enemy *enemy, int damage) {
     }
     // Reward threat, not remaining HP: fast runners earn the
     // middle tier; brutes have 3x chaser health but award 5x XP.
-    const int rewards[] = {1, 2, 5};
-    assert(enemy->kind >= SIM_CHASER && enemy->kind <= SIM_BRUTE);
+    const int rewards[] = {1, 2, 5, 0, 3};
+    assert(enemy->kind >= SIM_CHASER && enemy->kind < SIM_ENEMY_KIND_COUNT);
+    assert(rewards[enemy->kind] > 0);
     drop_gem(state, enemy->x, enemy->y, rewards[enemy->kind]);
 }
 
@@ -468,6 +483,71 @@ static void damage_player(sim_state *state) {
     if (state->hp == 0) state->dead = true;
 }
 
+// Convert through the same interpolated unit circle used by blades. Paired
+// inverse/forward interpolation aims along the target vector without host trig.
+static double aim_direction(float dx, float dy, double fallback) {
+    if (dx == 0 && dy == 0) return fallback; // Coincident actors reuse the prior shot heading.
+    double x = dy, y = dx; // BulletML: 0 up, clockwise; world: Y up.
+    for (int i = 0; i < 32; ++i) {
+        int next = (i + 1) % 32;
+        double a = blade_circle[i][0] * y - blade_circle[i][1] * x;
+        double b = x * blade_circle[next][1] - y * blade_circle[next][0];
+        if (a < 0 || b < 0) continue;
+        assert(a + b > 0);
+        double direction = (i + a / (a + b)) * (360.0 / 32);
+        return direction >= 360 ? direction - 360 : direction;
+    }
+    assert(false); // Every nonzero vector belongs to a circle sector.
+    return 0;
+}
+
+typedef struct { sim_state *state; sim_enemy *enemy; } ranger_emitter;
+
+static void ranger_event(void *user, const bm_event *event) {
+    ranger_emitter *emitter = user;
+    if (event->kind == BM_DONE) return;
+    // First host slice deliberately accepts linear child bullets only. The VM
+    // supports child actions/motion events, but their world integration is next.
+    assert(event->kind == BM_SPAWN && event->child.depth == 0 && event->child.wait == 0);
+    assert(event->direction >= 0 && event->direction < 360 && event->speed >= 0 && event->speed <= FLT_MAX / SIM_PATTERN_HZ);
+    for (int i = 0; i < SIM_MAX_HOSTILE_BULLETS; ++i) {
+        sim_bullet *bullet = &emitter->state->hostile_bullets[i];
+        if (bullet->active) continue;
+        double phase = event->direction * (32.0 / 360);
+        int index = (int)phase, next = (index + 1) % 32;
+        float t = (float)(phase - index);
+        float vx = blade_circle[index][1] + t * (blade_circle[next][1] - blade_circle[index][1]);
+        float vy = blade_circle[index][0] + t * (blade_circle[next][0] - blade_circle[index][0]);
+        float scale = (float)(event->speed * SIM_PATTERN_HZ) / __builtin_sqrtf(vx * vx + vy * vy);
+        *bullet = (sim_bullet){emitter->enemy->x,emitter->enemy->y,vx*scale,vy*scale,SIM_BULLET_TICKS,true};
+        return;
+    }
+    // Pool saturation is expected: discard this shot, never stall/replay the VM.
+}
+
+static void ranger_attacks(sim_state *state) {
+    for (int i = 0; i < SIM_MAX_ENEMIES; ++i) {
+        sim_enemy *enemy = &state->enemies[i];
+        if (!enemy->active || enemy->kind != SIM_RANGER) continue;
+        assert(enemy->pattern.pattern == &sim_ranger_pattern);
+        float dx = state->x - enemy->x, dy = state->y - enemy->y;
+        if (dx*dx + dy*dy > 96*96 || wall_hit(enemy->x,enemy->y,dx,dy,SIM_BULLET_HALF) <= 1) {
+            bm_restart(&enemy->pattern, 0); // Reacquisition always gets a full tell.
+            enemy->attack_ticks = 0;
+            continue;
+        }
+        if (state->ticks % SIM_PATTERN_SUBSTEPS) continue; // VM 60 Hz, simulation 120.
+        bm_context context = {.rank=.5,.random=.3,
+            .aim_direction=aim_direction(dx,dy,enemy->pattern.last_fire_direction)};
+        ranger_emitter emitter = {state,enemy};
+        bm_tick(&enemy->pattern, context, ranger_event, &emitter);
+        // Short waits are the warning window for this fixture. Do not inspect
+        // VM stack/opcode positions: future authored actions can change freely.
+        bool warning = !enemy->pattern.done && enemy->pattern.wait <= 30;
+        enemy->attack_ticks = warning ? (enemy->pattern.wait + 1) * SIM_PATTERN_SUBSTEPS : 0;
+    }
+}
+
 static void boss_attacks(sim_state *state) {
     const float directions[8][2] = {
         {1,0}, {.70710678f,.70710678f}, {0,1}, {-.70710678f,.70710678f},
@@ -529,9 +609,12 @@ static void combat(sim_state *state, float old_x, float old_y) {
         if (state->spawn_ticks == 0) {
             unsigned sequence = state->ticks / (unsigned)spawn_interval(state);
             sim_enemy_kind kind = SIM_CHASER;
-            if (sim_wave(state) == 2 && sequence % 3 == 0) kind = SIM_RUNNER;
+            if (sim_wave(state) == 2) {
+                const sim_enemy_kind mix[] = {SIM_RUNNER, SIM_CHASER, SIM_RANGER, SIM_CHASER};
+                kind = mix[sequence % 4];
+            }
             if (sim_wave(state) == 3) {
-                const sim_enemy_kind mix[] = {SIM_BRUTE, SIM_RUNNER, SIM_RUNNER, SIM_CHASER};
+                const sim_enemy_kind mix[] = {SIM_BRUTE, SIM_RUNNER, SIM_RANGER, SIM_CHASER};
                 kind = mix[sequence % 4];
             }
             spawn(state, kind); // Full pools/occupied spawn sites skip this attempt.
@@ -544,6 +627,7 @@ static void combat(sim_state *state, float old_x, float old_y) {
     if (state->won) return;
     blades(state, old_x, old_y);
     if (state->won) return;
+    ranger_attacks(state);
     boss_attacks(state);
     hostile_projectiles(state);
     if (state->hurt_ticks == 0) {

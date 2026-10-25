@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "bulletml/bulletml.h"
 
 #define SIM_WIDTH 16
 #define SIM_HEIGHT 10
@@ -45,7 +46,7 @@ enum {
     SIM_UPGRADE_BLADE_SPEED, SIM_UPGRADE_COUNT
 };
 typedef struct { float x, y; int value; bool active; } sim_gem;
-typedef enum { SIM_CHASER, SIM_RUNNER, SIM_BRUTE, SIM_BOSS, SIM_ENEMY_KIND_COUNT } sim_enemy_kind;
+typedef enum { SIM_CHASER, SIM_RUNNER, SIM_BRUTE, SIM_BOSS, SIM_RANGER, SIM_ENEMY_KIND_COUNT } sim_enemy_kind;
 typedef struct {
     float x, y;
     int hp;
@@ -53,6 +54,7 @@ typedef struct {
     sim_enemy_kind kind;
     int attack_ticks;
     int blade_hurt_ticks;
+    bm_state pattern; // Active only for rangers; immutable IR is borrowed.
 } sim_enemy;
 typedef struct {
     float x, y, vx, vy;

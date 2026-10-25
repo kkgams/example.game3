@@ -5,7 +5,7 @@ Shared tilemap and instanced-sprite pipelines, two targets: **macOS Metal** and
 **browser WebGL2/WASM**. Move a placeholder player around a fixed arena using
 **WASD or arrow keys**. Attacks fire automatically at nearby visible enemies.
 Chasers, runners and brutes hunt around the solid outer walls and central block;
-contact costs health. Survive three 30-second waves, then defeat the final boss. Collect XP gems to fill the XP bar. Level-up pauses the world;
+rangers keep their distance and fire aimed fans. Contact and pink enemy shots cost health. Survive three 30-second waves, then defeat the final boss. Collect XP gems to fill the XP bar. Level-up pauses the world;
 press **1–3** for shot damage, shot speed or movement speed; **4** unlocks
 orbiting blades. Once unlocked, **4–6** upgrade blade damage, count or spin.
 The HUD shows time remaining, wave, health, kills, level and XP, plus boss health
@@ -152,12 +152,14 @@ choices and browser pause time. Three hard-coded waves introduce enemy types:
 | Time elapsed | Enemies | Spawn interval |
 | --- | --- | --- |
 | 0–30 seconds | Red square chasers | 0.75 seconds (first spawn at 1 second) |
-| 30–60 seconds | Chasers + lime triangle runners | 0.625 seconds |
-| 60–90 seconds | Chasers + runners + blue hollow-square brutes | 0.5 seconds |
+| 30–60 seconds | Chasers + lime triangle runners + purple ring rangers | 0.625 seconds |
+| 60–90 seconds | Chasers + runners + rangers + blue hollow-square brutes | 0.5 seconds |
 | 90 seconds onward | Gold diamond boss, turning orange at half health | No ordinary spawns |
 
 Chasers have 2 HP and move at 28 pixels/second; runners have 1 HP and move at 44;
-brutes have 6 HP, move at 18 and drop 5 XP. All use cardinal BFS routing around
+brutes have 6 HP, move at 18 and drop 5 XP. Rangers have 4 HP, move at 22 and drop
+3 XP; they approach when distant/blocked, hold a visible 48–80-pixel range, and
+retreat when closer. All use cardinal BFS routing around
 the central block and a common 10x10 collision body. Their sprite silhouettes
 and colors differ. Spawn points are deterministic, unoccupied inner perimeter
 tile centers. Full enemy pools/occupied spawn sites skip that ordinary attempt.
@@ -186,14 +188,15 @@ Boss death wins its simulation tick before hostile/contact damage. Loss also
 freezes the run, and R fully restarts either result.
 
 These are hard-coded encounters, not a scenario format or balance promise.
-BulletML, further weapons, GAMS-authored scenarios and title/credits remain
-deferred; the boss ring is a small authored C pattern, not a BulletML runner. The HUD uses a small authored bitmap font in the same atlas,
+Further weapons, GAMS-authored scenarios and title/credits remain
+deferred; the boss ring remains a small authored C pattern. Rangers exercise
+the independent BulletML VM described below. The HUD uses a small authored bitmap font in the same atlas,
 so native and browser show the same result/retry prompt without new libraries.
 
 ## XP and upgrades
 
 XP rewards use authored threat tiers, not a linear HP multiplier: chasers drop
-**1 XP**, fast runners **2 XP**, and brutes **5 XP** despite having only three
+**1 XP**, fast runners **2 XP**, rangers **3 XP**, and brutes **5 XP** despite having only three
 times a chaser's health. Rewards depend on enemy kind, not remaining HP or overkill.
 The final boss ends the run instead of dropping XP.
 
@@ -248,17 +251,47 @@ victory freeze the orbit; retry resets unlocks, stats, phase and hit cooldowns.
 Positions are owned by the fixed-step simulation and shared with rendering via
 sim_blade_position; a 32-point interpolated circle avoids host sin/cos dependencies.
 
+## BulletML first slice
+
+`game/bulletml/` is a standalone C11 event VM adapted from the demo's Odin
+runtime, with no ECS, Sokol, allocator, game-state or GAMS dependencies. See its
+[API/limits](game/bulletml/README.md) and [provenance](game/bulletml/PROVENANCE.md).
+This ports the demo's semantics, not an XML parser or a full-spec compliance layer.
+
+`game/patterns.c` supplies a hand-authored parameterized aimed fan: repeat an
+initial 30-frame wait, three fires with `$1` offsets -10/0/+10 degrees, then a
+60-frame rest. The VM runs at 60 Hz; speeds are pixels per VM frame, converted
+to 52 pixels/second in the 120 Hz game. Demo wait semantics add resume calls,
+so an acquired ranger fires after roughly 0.53 seconds, then every 1.53 seconds.
+Aiming uses 0=up, clockwise angles in the Y-up world. Pauses freeze VM execution.
+
+Rangers show a yellow warning during short pattern waits (30 frames or fewer),
+including the tail of the rest before the next wind-up. Losing line of sight or
+leaving 96-pixel firing range restarts execution; reacquisition gets a full tell.
+Pink shots use the existing 32-slot hostile pool, swept wall/player collision,
+two-second lifetime and shared player invulnerability. Full pools skip shots
+without stalling/replaying the pattern. Death stops the emitter; existing shots
+continue. Boss entry clears ordinary enemies/shots; retry clears VM state.
+
+**Deliberate adapter limit:** the VM emits child-action/motion events, but this
+first host slice accepts only straight child bullets without actions. Unsupported
+host events assert rather than disappear silently. Boss patterns, child motion
+interpolation, XML/JSON loading, GAMS nodegraphs/respack decoding, balance data
+and the director are separate follow-ups. Future loaders create the independent
+IR; game-specific enemy/wave/damage data stays outside the VM.
+
 ## Rendering and verification
 
 `game/render/render2d.{h,c}` owns the tilemap and sprite pipelines; authored
 shaders and generated C bindings live alongside it. See
 [the renderer contract](game/render/README.md) and
 [import provenance](game/render/PROVENANCE.md). No decoder, director, resource
-pack, BulletML or gameplay systems were imported. The original triangle shader
+pack or complete gameplay systems were imported. The later BulletML VM port is
+recorded separately above; generated decoders/director remain absent. The original triangle shader
 is retained as a shader-generation test fixture, not drawn by the app. Output
 filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
 
-- `make test`: passed (16 Node tests). Includes standalone C movement/collision
+- `make test`: passed (53 checks, including 35 VM invalid-input subtests). Includes standalone C movement/collision
   assertions (movement, fixed-step timing, collision, spawning, chase paths,
   targeting/line of sight, swept projectile hits, pool saturation, contact damage,
   death/reset, XP drops/attraction, blocked pickups, pool merging, exact collection,
@@ -281,7 +314,13 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   HiDPI framebuffer coordinates. Browser runner tests cover CSS-relative pointer
   coordinates and ignore paused/hidden/modified/secondary clicks. Pages checks
   verify the production artifact file set and asset resolution under a repository
-  subpath, including WASM validity.
+  subpath, including WASM validity. BulletML checks port the original sequence
+  regression and cover expressions, parameters/child ownership, waits/repeats,
+  restart, motion-event payloads and fail-loud guards. Ranger tests cover fan
+  timing/cardinal aim, actual player hits, approach/hold/retreat, blocked LOS and
+  reacquisition, pool saturation without replay, pause/frame partitions, waves,
+  XP, boss entry and reset. Real WASM tests verify spawn initialization, warning,
+  paused VM, emitted shots and a real kill-to-blue-gem path.
   Real enemy-kill-to-render checks ensure chasers produce purple, runners blue,
   and brutes gold without requiring pool-overflow merges.
   That last test uses invulnerability to isolate flow from balance, not to claim
@@ -300,8 +339,9 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   Node suite: stage the six-card app fixture at that portrait size and call
   assertCardPixelSeams(canvas, wasmExports.frame). Its 21 background samples
   reproduced atlas-edge transparency before the shader fix and pass afterward.
-  Full human weapon
-  balance playtesting remains outstanding. Earlier checks verified obstacle
+  A staged Chrome run also verified the ranger silhouette, warning, and live
+  three-shot VM fan without console errors. Full human weapon/enemy balance
+  playtesting remains outstanding. Earlier checks verified obstacle
   sliding, outer-wall collision, focus release, sprite flips, opacity and tint.
 - Zig 0.17.0: `make native`, `make smoke-native` and `make test` pass.
   The native recipe uses `--sysroot "$SDK" -F/System/Library/Frameworks`:

@@ -55,6 +55,27 @@ __attribute__((export_name("test_wave"))) void test_wave(int wave) {
     frame(SIM_STEP);
 }
 
+__attribute__((export_name("test_ranger"))) void test_ranger(void) {
+    sim_init(&state.simulation);
+    state.simulation.ticks = SIM_WAVE_TICKS + 149;
+    state.simulation.spawn_ticks = 1;
+    state.simulation.shot_ticks = state.simulation.hurt_ticks = 1000000;
+    frame(SIM_STEP); // Actual wave mix and spawn initialization, not an empty VM fixture.
+    assert(state.simulation.enemies[0].kind == SIM_RANGER);
+    state.simulation.enemies[0].x = -80;
+    state.simulation.enemies[0].y = 56;
+    state.simulation.spawn_ticks = 1000000;
+    frame(0);
+}
+
+__attribute__((export_name("test_ranger_defeat"))) void test_ranger_defeat(void) {
+    sim_enemy *enemy = &state.simulation.enemies[0];
+    assert(enemy->active && enemy->kind == SIM_RANGER);
+    state.simulation.damage = 4;
+    state.simulation.bullets[0] = (sim_bullet){enemy->x,enemy->y,0,0,240,true};
+    frame(SIM_STEP);
+}
+
 __attribute__((export_name("test_boss"))) void test_boss(void) {
     sim_init(&state.simulation);
     state.simulation.ticks = SIM_BOSS_TICKS - 1;

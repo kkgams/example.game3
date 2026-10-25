@@ -29,8 +29,8 @@ SHADER_HEADERS := $(addsuffix .h,$(SHADER_SOURCES))
 SHADER_DEPS_DIR := $(BUILD)/shader-deps
 SHADER_DEPFILES := $(addprefix $(SHADER_DEPS_DIR)/,$(addsuffix .d,$(SHADER_SOURCES)))
 SHADERS_MISSING_DEPS := $(patsubst $(SHADER_DEPS_DIR)/%.d,%.h,$(filter-out $(wildcard $(SHADER_DEPFILES)),$(SHADER_DEPFILES)))
-GAME_SOURCES := game/main.c game/sim.c game/render/render2d.c
-COMMON := $(GAME_SOURCES) game/app.h game/sim.h game/font.h game/render/render2d.h $(SHADER_HEADERS) $(SOKOL_HEADERS)
+GAME_SOURCES := game/main.c game/sim.c game/patterns.c game/bulletml/bulletml.c game/render/render2d.c
+COMMON := $(GAME_SOURCES) game/app.h game/sim.h game/patterns.h game/bulletml/bulletml.h game/font.h game/render/render2d.h $(SHADER_HEADERS) $(SOKOL_HEADERS)
 WEB_HEADERS := $(shell find game/web/wasm-include -type f)
 
 .PHONY: all deps sokol sokol-shdc native web run play serve test smoke-native clean shaders
@@ -104,7 +104,7 @@ $(BUILD)/web/triangle.wasm: Makefile $(COMMON) game/web/main.c $(WEB_HEADERS)
 # Test-only app staging hooks are compiled into a separate WASM, never the game.
 $(BUILD)/test/scene.wasm: Makefile $(COMMON) game/web/main.c test/scene.c $(WEB_HEADERS)
 	@mkdir -p $(BUILD)/test
-	$(ZIG) build-exe game/web/main.c test/scene.c game/sim.c game/render/render2d.c -target wasm32-freestanding \
+	$(ZIG) build-exe game/web/main.c test/scene.c game/sim.c game/patterns.c game/bulletml/bulletml.c game/render/render2d.c -target wasm32-freestanding \
 		-fno-entry -rdynamic -O ReleaseSafe -I game/web/wasm-include -femit-bin=$@
 
 $(BUILD)/web/%: game/web/%

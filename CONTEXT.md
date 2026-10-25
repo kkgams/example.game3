@@ -4,7 +4,7 @@ Started from the owner's gams3/plugins/game C/Sokol triangle, adapted into an
 independent experiment with native macOS/Metal and browser WASM/WebGL2 targets.
 Current milestone: a first survivor combat loop in a fixed tilemap arena, using
 shared tilemap/sprite pipelines and procedural textures. Movement, tile collision,
-three enemy archetypes, automatic aimed shots, contact damage, XP gems,
+four ordinary enemy archetypes, automatic aimed shots, contact damage, XP gems,
 health/kills/level/XP/timer HUD, paused level-up choices, a three-wave 90-second
 countdown, a two-phase final boss, optional orbiting blades, win/loss and R
 restart are implemented. Authored scenarios and further weapons are not. A minimal gams.json provides
@@ -25,6 +25,15 @@ Ownership:
   the same viewport zoom as rendering, and shares selection guards with keys.
   Native mouse positions normalize against logical window size (not framebuffer
   size); browser pointer input normalizes CSS canvas bounds, independent of DPR.
+- game/bulletml/: allocation-free independent C11 port of the demo event VM;
+  immutable borrowed IR, bounded stack/params, synchronous event callback,
+  expressions/references/waits/repeats and motion targets. No generated decoder,
+  GAMS, ECS or renderer dependency. See its README and provenance for exact
+  semantics/limits; this is demo-compatible, not a full XML/spec implementation.
+- game/patterns.{h,c}: authored fixture IR and the 60 Hz VM clock convention.
+  The ranger fan exercises repeat/wait/fire refs and a parameterized $1 offset.
+  Speed is pixels per VM frame; the host converts to pixels/second. Future
+  GAMS loaders replace authored data, not the independent VM interface.
 - game/sim.{h,c}: platform-independent 120 Hz movement and swept tile collision;
   normalized diagonal movement, 64 pixels/second, 0.25-second frame-time cap.
   Also owns bounded enemy/projectile pools, deterministic perimeter spawns,
@@ -35,8 +44,8 @@ Ownership:
   sim_choose_upgrade accepts shot damage/rate, movement speed, blade unlock,
   blade damage/count/spin choices;
   capped attack rate consumes nothing. sim_init fully resets the run and stats.
-  Enemy kinds are chaser, runner, brute and boss. Authored, non-linear XP
-  rewards are 1 for chasers, 2 for fast runners and 5 for brutes (3x chaser HP,
+  Enemy kinds are chaser, runner, brute, boss and ranger. Authored, non-linear XP
+  rewards are 1 for chasers, 2 for fast runners, 3 for rangers and 5 for brutes (3x chaser HP,
   5x XP),
   independent of remaining HP/overkill. Boss death ends the run without XP.
   Gem tint reflects stored value: purple 1, blue 2–4, gold 5+, including merges. Waves change every 30 active
@@ -53,6 +62,13 @@ Ownership:
   and fresh spawns reset it. Both weapons use shared hit_enemy kill/XP/victory
   handling; blade slots are independent from projectiles and do not block enemy
   shots. Upgrade/result freezes include the orbit; sim_init resets the weapon.
+  Rangers enter waves 2/3, with 4 HP/22 px/s, approach/hold/retreat distance AI,
+  LOS-gated VM ticks every two simulation steps, short-wait warning and aimed
+  three-shot fans. Reacquisition restarts a full wind-up. Hostile saturation
+  drops events without replaying them. First host adapter accepts linear child
+  bullets only; unsupported child actions/motion events assert. VM commands
+  support them independently, but world interpolation is deferred. Existing
+  boss rings are not migrated. Enemy death stops its VM; reset clears all state.
 - game/font.h: small authored 5x7 uppercase/digit HUD glyphs, rasterized into
   the procedural atlas; no downloaded font or new rendering dependency.
 - game/app.h: shared app callbacks and eight-binding scalar browser key ABI.

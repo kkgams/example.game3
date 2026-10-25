@@ -15,7 +15,7 @@ test('standalone simulation: movement, combat, XP/upgrades, timing, collision, d
   t.after(() => rm(folder, { recursive: true, force: true }))
   const executable = path.join(folder, 'sim-test')
   execFileSync(process.env.ZIG || 'zig', [
-    'cc', 'test/sim.c', 'game/sim.c', '-Igame',
+    'cc', 'test/sim.c', 'game/sim.c', 'game/patterns.c', 'game/bulletml/bulletml.c', '-Igame',
     '-std=c11', '-Wall', '-Wextra', '-Werror', '-o', executable,
   ], { cwd: root, encoding: 'utf8' })
   const output = execFileSync(executable, [], { cwd: folder, encoding: 'utf8' })
