@@ -21,9 +21,16 @@ Adaptations in the adjacent `.glsl` files:
 - Rename uniform blocks from `vs_params` to `tilemap_params` and
   `sprite_params`, respectively, avoiding C binding collisions with each other
   and the triangle shader.
-- Preserve module/program names, shader stages, and all GLSL rendering logic,
+- The initial import preserved module/program names, shader stages, and GLSL rendering logic,
   including input types, bindings, flip transforms, lookup decoding, repeat,
   discard, opacity, and additive-color behavior.
+
+Subsequent authored rendering fix: `sprite.glsl` now passes flat per-instance
+texel bounds and clamps fragment samples to the selected cell's outermost texel
+centers. This prevents neighbouring transparent atlas cells from cutting seams
+through card backgrounds at fractional zoom. Geometry, UV interpolation scale,
+vertex inputs, uniform bindings, flip transforms and color/opacity remain intact.
+Original input hashes above are unchanged; this is not an upstream shader change.
 
 `render2d.c` ports the two Odin pipeline setups into C, without the ECS/world,
 decoders or director. It shares quad geometry, uses explicit `offsetof`/stride

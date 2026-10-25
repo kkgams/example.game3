@@ -8,6 +8,9 @@ void init(void);
 void frame(double elapsed);
 void cleanup(void);
 void event(const sapp_event *e);
+// Reward-card pointer input, normalized within the canvas/window (Y down).
+// Gameplay/outside-card clicks are ignored; selection shares keyboard guards.
+void app_choose_reward(float x, float y);
 
 // Stable scalar browser key ABI; never pass browser keyCodes/Sokol enums.
 enum {

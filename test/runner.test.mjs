@@ -22,10 +22,11 @@ async function harness() {
     })
   }
   const calls = []
-  const exports = Object.fromEntries(['init', 'cleanup', 'resize', 'frame', 'key', 'release_keys', 'retry', 'choose_upgrade'].map(name =>
+  const exports = Object.fromEntries(['init', 'cleanup', 'resize', 'frame', 'key', 'release_keys', 'retry', 'choose_upgrade', 'choose_reward'].map(name =>
     [name, (...args) => calls.push([name, ...args])]))
   exports.memory = { buffer: new ArrayBuffer(64) }
-  const canvas = target({clientWidth: 640, clientHeight: 480, dataset: {}, getContext: () => ({})})
+  const canvas = target({clientWidth: 640, clientHeight: 480, dataset: {}, getContext: () => ({}),
+    getBoundingClientRect: () => ({left: 20, top: 40, width: 640, height: 480})})
   const pause = target({textContent: '', disabled: true})
   const reload = target({textContent: '', disabled: true})
   const status = {textContent: ''}
@@ -79,7 +80,7 @@ test('browser runner uses physical movement keys only while the canvas is active
   const retries = h.calls.filter(c => c[0] === 'retry').length
   await h.window.emit('keydown', {code: 'KeyR', repeat: true})
   assert.equal(h.calls.filter(c => c[0] === 'retry').length, retries, 'holding retry is not repeated')
-  for (const [option, code] of ['Digit1', 'Digit2', 'Digit3'].entries()) {
+  for (const [option, code] of ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].entries()) {
     assert.equal((await h.window.emit('keydown', {code})).prevented, true)
     assert.deepEqual(h.calls.at(-1), ['choose_upgrade', option])
     const n = h.calls.length
@@ -92,6 +93,28 @@ test('browser runner uses physical movement keys only while the canvas is active
   await h.window.emit('keydown', {code: 'MetaLeft', metaKey: true})
   await h.window.emit('keyup', {code: 'MetaLeft', metaKey: false})
   assert.deepEqual(h.calls.slice(-3), [['key', 3, 1], ['release_keys'], ['release_keys']])
+})
+
+test('reward pointer input normalizes CSS coordinates and ignores paused, hidden, modified and secondary clicks', async () => {
+  const h = await harness()
+  h.window.devicePixelRatio = 2 // Pointer coordinates must not be multiplied by DPR.
+  const click = {button:0,clientX:180,clientY:160}
+  assert.equal((await h.canvas.emit('pointerdown', click)).prevented, true)
+  assert.deepEqual(h.calls.at(-1), ['choose_reward', .25, .25])
+  const count = () => h.calls.filter(c => c[0] === 'choose_reward').length
+  const before = count()
+  await h.canvas.emit('pointerdown', {...click,button:2})
+  await h.canvas.emit('pointerdown', {...click,ctrlKey:true})
+  await h.pause.emit('click')
+  await h.canvas.emit('pointerdown', click)
+  await h.pause.emit('click')
+  h.document.hidden = true
+  await h.canvas.emit('pointerdown', click)
+  assert.equal(count(), before)
+  h.document.hidden = false
+  h.canvas.getBoundingClientRect = () => ({left:100,top:200,width:320,height:640})
+  await h.canvas.emit('pointerdown', {button:0,clientX:260,clientY:360})
+  assert.deepEqual(h.calls.at(-1), ['choose_reward', .5, .25])
 })
 
 test('browser clock supplies seconds and resets on pause, focus loss, hide and reload', async () => {

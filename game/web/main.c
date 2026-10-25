@@ -104,11 +104,17 @@ __attribute__((export_name("release_keys"))) void platform_release_keys(void) {
   event(&e);
 }
 
+// UI slots 0..5 map to physical 1..6, not simulation upgrade enum values.
+// Slot 3 unlocks blades first and upgrades their damage thereafter.
 __attribute__((export_name("choose_upgrade"))) void platform_choose_upgrade(int option) {
-  assert(option >= 0 && option < 3);
+  assert(option >= 0 && option < 6);
   sapp_event e = {.type = SAPP_EVENTTYPE_KEY_DOWN,
                   .key_code = (sapp_keycode)(SAPP_KEYCODE_1 + option)};
   event(&e);
+}
+
+__attribute__((export_name("choose_reward"))) void platform_choose_reward(float x, float y) {
+  app_choose_reward(x, y);
 }
 
 __attribute__((export_name("retry"))) void platform_retry(void) {

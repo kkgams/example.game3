@@ -32,7 +32,18 @@
 #define SIM_HURT_TICKS 90
 #define SIM_BULLET_TICKS 240
 
-enum { SIM_UPGRADE_DAMAGE, SIM_UPGRADE_ATTACK, SIM_UPGRADE_SPEED, SIM_UPGRADE_COUNT };
+#define SIM_MAX_BLADES 4
+#define SIM_BLADE_RADIUS 22.0f
+#define SIM_BLADE_HALF 3.0f
+#define SIM_BLADE_PERIOD 960u
+#define SIM_BLADE_MAX_SPEED 12u
+#define SIM_BLADE_HIT_TICKS 30
+
+enum {
+    SIM_UPGRADE_DAMAGE, SIM_UPGRADE_ATTACK, SIM_UPGRADE_SPEED,
+    SIM_UPGRADE_BLADES, SIM_UPGRADE_BLADE_DAMAGE, SIM_UPGRADE_BLADE_COUNT,
+    SIM_UPGRADE_BLADE_SPEED, SIM_UPGRADE_COUNT
+};
 typedef struct { float x, y; int value; bool active; } sim_gem;
 typedef enum { SIM_CHASER, SIM_RUNNER, SIM_BRUTE, SIM_BOSS, SIM_ENEMY_KIND_COUNT } sim_enemy_kind;
 typedef struct {
@@ -41,6 +52,7 @@ typedef struct {
     bool active;
     sim_enemy_kind kind;
     int attack_ticks;
+    int blade_hurt_ticks;
 } sim_enemy;
 typedef struct {
     float x, y, vx, vy;
@@ -57,6 +69,8 @@ typedef struct {
     int level, xp, xp_next, damage, shot_interval;
     float move_speed;
     bool choosing;
+    int blade_count, blade_damage;
+    unsigned blade_phase, blade_speed;
     sim_gem gems[SIM_MAX_GEMS];
     sim_enemy enemies[SIM_MAX_ENEMIES];
     sim_bullet bullets[SIM_MAX_BULLETS];
@@ -71,7 +85,10 @@ void sim_init(sim_state *state);
 /* Waves 1..3 last 30 seconds each; 4 denotes the final boss duel. Clock ticks
    advance only during active play (never choices, death or victory). */
 int sim_wave(const sim_state *state);
-/* False outside a level-up or for a capped attack-rate option. Invalid option
+/* Get an unlocked blade's shared render/collision position. False if occluded
+   by a wall; output coordinates are still set. Blade indices must be active. */
+bool sim_blade_position(const sim_state *state, int blade, float *x, float *y);
+/* False outside a level-up, for locked/already-unlocked or capped options. Invalid option
    indices assert. Each accepted choice consumes one threshold, preserves excess
    XP and queues another choice if needed; no elapsed time is carried across. */
 bool sim_choose_upgrade(sim_state *state, int option);

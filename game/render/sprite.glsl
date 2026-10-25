@@ -20,6 +20,7 @@ in ivec2 inst_offset;
 
 
 out vec2 fragTexCoord;
+flat out vec4 texelBounds;
 out float opacity;
 out vec4 colorAdd;
 
@@ -52,6 +53,11 @@ void main() {
 
     // Map back to UV space
     fragTexCoord = inst_uv.xy + (transformed_uv + vec2(0.5)) * (inst_uv.zw - inst_uv.xy);
+    // Clamp in the fragment stage, not by shrinking the interpolated UV span:
+    // preserve pixel scale while keeping exact atlas-edge samples in this cell.
+    vec2 half_texel = vec2(0.5) / atlas_size;
+    texelBounds = vec4(min(inst_uv.xy, inst_uv.zw) + half_texel,
+                      max(inst_uv.xy, inst_uv.zw) - half_texel);
 }
 @end
 
@@ -60,12 +66,13 @@ layout(binding=0) uniform texture2D tex0;
 layout(binding=0) uniform sampler default_sampler;
 
 in vec2 fragTexCoord;
+flat in vec4 texelBounds;
 in float opacity;
 in vec4 colorAdd;
 
 out vec4 frag_color;
 void main() {
-    vec4 texColor = texture(sampler2D(tex0, default_sampler), fragTexCoord);
+    vec4 texColor = texture(sampler2D(tex0, default_sampler), clamp(fragTexCoord, texelBounds.xy, texelBounds.zw));
     texColor.a *= opacity;
     if (texColor.a < 0.001) {
         discard;

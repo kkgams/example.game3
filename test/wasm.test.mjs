@@ -8,7 +8,7 @@ const module = await WebAssembly.compile(bytes)
 
 test('WASM imports and exports match the standalone runner', () => {
   const exports = new Set(WebAssembly.Module.exports(module).map(x => x.name))
-  for (const name of ['memory', 'init', 'frame', 'cleanup', 'resize', 'key', 'release_keys', 'retry', 'choose_upgrade']) {
+  for (const name of ['memory', 'init', 'frame', 'cleanup', 'resize', 'key', 'release_keys', 'retry', 'choose_upgrade', 'choose_reward']) {
     assert.ok(exports.has(name), `missing export ${name}`)
   }
   for (const name of exports) assert.ok(!name.startsWith('test_'), 'production WASM excludes scene staging hooks')
@@ -219,6 +219,136 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
     }
     return colors
   }
+  function bladeSprites() {
+    const upload = spriteUpload(), positions = []
+    for (let offset = 0; offset < upload.byteLength; offset += 60) {
+      if (upload.getFloat32(offset + 20, true) === .375 && upload.getFloat32(offset + 24, true) === .75)
+        positions.push([upload.getFloat32(offset, true), upload.getFloat32(offset + 4, true)])
+    }
+    return positions
+  }
+  function assertCardBounds(unlocked) {
+    const upload = spriteUpload(), columns = unlocked ? 3 : 2, cardWidth = unlocked ? 96 : 128
+    let tiles = 0, glyphs = 0
+    const cards = Array.from({length:columns*2}, (_,i) => ({
+      x: columns === 3 ? (i % 3 - 1) * 104 : i % 2 ? 72 : -72,
+      y: i < columns ? 40 : -40,
+    }))
+    for (let offset = 0; offset < upload.byteLength; offset += 60) {
+      const x=upload.getFloat32(offset,true), y=upload.getFloat32(offset+4,true)
+      const u=upload.getFloat32(offset+20,true), v=upload.getFloat32(offset+24,true)
+      const body = u === .25 && v === .75 && upload.getFloat32(offset+36,true) === Math.fround(.035)
+      const glyph = u >= .5 && v < .625 && y > -76 && y < 76
+      if (!body && !glyph) continue
+      const half = body ? 8 : 4
+      const card = cards.find(c => Math.abs(x-c.x) + half <= cardWidth/2 && Math.abs(y-c.y) + half <= 32)
+      assert.ok(card, `card content at ${x},${y} stays within one card`)
+      if (glyph) {
+        ++glyphs
+        assert.ok(Math.abs(x-card.x)+4 <= cardWidth/2-2 && Math.abs(y-card.y)+4 <= 30, 'labels do not meet or cross borders')
+      } else ++tiles
+    }
+    assert.equal(tiles, columns*2*(cardWidth/16)*4, 'every card body is fully submitted, not truncated')
+    assert.ok(glyphs > 50)
+  }
+  scene.exports.test_offer()
+  for (const [w,h] of [[320,240],[240,320],[1920,400],[375,667],[80,60]]) {
+    width=w; height=h
+    scene.exports.resize(w,h)
+    scene.exports.frame(0)
+    assertCardBounds(false)
+    const menu = hudText()
+    scene.exports.choose_reward(.5,.5) // Gap between the four cards.
+    scene.exports.choose_reward(-.1,.5) // Pointer outside the canvas.
+    scene.exports.frame(0)
+    assert.equal(hudText(), menu)
+  }
+  // Click the unlock card using the actual portrait projection, not 320x240 pixels.
+  width=375; height=667
+  scene.exports.resize(width,height)
+  scene.exports.frame(0)
+  const zoom = Math.max(320/width,240/height)
+  scene.exports.choose_reward(.5+72/(width*zoom), .5+40/(height*zoom))
+  scene.exports.frame(0)
+  assert.equal(bladeSprites().length, 2, 'click unlock uses the rendered card hitbox')
+  scene.exports.cleanup()
+  width=640; height=480
+  scene.exports.init()
+  scene.exports.test_offer()
+  assert.match(hudText(), /4BLADESUNLOCK2BLADES/)
+  const lockedMenu = hudText()
+  scene.exports.choose_upgrade(4) // 5 cannot upgrade a locked weapon.
+  scene.exports.frame(0)
+  assert.equal(hudText(), lockedMenu)
+  scene.exports.choose_upgrade(3) // 4 unlocks, via the same event as native.
+  scene.exports.frame(0)
+  assert.deepEqual(bladeSprites(), [[-58,0],[-102,0]])
+  assert.match(hudText(), /SHOTANDBLADES$/)
+  scene.exports.frame(.25)
+  assert.notDeepEqual(bladeSprites(), [[-58,0],[-102,0]], 'blades actually orbit')
+  for (const [x,y] of bladeSprites()) {
+    const radius = Math.hypot(x + 80, y)
+    assert.ok(radius > 21.8 && radius < 22.01)
+  }
+  scene.exports.test_offer()
+  for (const [w,h] of [[320,240],[240,320],[1920,400],[375,667],[80,60]]) {
+    width=w; height=h
+    scene.exports.resize(w,h)
+    scene.exports.frame(0)
+    assertCardBounds(true)
+  }
+  width=640; height=480
+  scene.exports.resize(width,height)
+  scene.exports.frame(0)
+  assert.match(hudText(), /4BLADESDAMAGEPLUS1.*5BLADESCOUNTPLUS1.*6BLADESSPINSPEEDFASTER/)
+  const bladePause = calls.findLast(c => c[0] === 'bufferSubData')[3]
+  scene.exports.frame(.25)
+  assert.deepEqual(calls.findLast(c => c[0] === 'bufferSubData')[3], bladePause, 'orbit freezes during choices')
+  scene.exports.choose_upgrade(3) // 4 now upgrades blade damage, not a second unlock.
+  scene.exports.frame(0)
+  for (let i = 0; i < 2; ++i) {
+    scene.exports.test_offer()
+    scene.exports.choose_upgrade(4)
+    scene.exports.frame(0)
+    assert.equal(bladeSprites().length, 3 + i)
+  }
+  for (let i = 0; i < 4; ++i) {
+    scene.exports.test_offer()
+    scene.exports.choose_upgrade(5)
+    scene.exports.frame(0)
+  }
+  scene.exports.test_offer()
+  assert.match(hudText(), /5BLADESCOUNTMAX.*6BLADESSPINSPEEDMAX/)
+  const maxMenu = hudText()
+  for (const option of [4,5]) {
+    scene.exports.choose_upgrade(option)
+    scene.exports.frame(0)
+    assert.equal(hudText(), maxMenu, 'capped blade choices cannot consume XP')
+  }
+  for (const x of [.5,.5+104/320]) {
+    scene.exports.choose_reward(x,.5+40/240) // MAX cards also reject pointer selection.
+    scene.exports.frame(0)
+    assert.equal(hudText(), maxMenu)
+  }
+  width=1280; height=960
+  scene.exports.resize(width,height)
+  scene.exports.test_native_click(.5-104/320,.5-40/240)
+  scene.exports.frame(0)
+  assert.ok(!hudText().includes('LEVELUP'), 'native logical mouse coordinates select correctly on a HiDPI framebuffer')
+  width=640; height=480
+  scene.exports.resize(width,height)
+  scene.exports.test_blade_target(2)
+  assert.deepEqual(gemColors(), [[1,.8,.15,1].map(Math.fround)], 'blade kill drops real brute XP')
+  scene.exports.test_blade_target(3)
+  assert.match(hudText(), /YOUWINRRETRY$/)
+  assert.equal(bladeSprites().length, 4, 'victory keeps frozen blades visible')
+  const bladeVictory = calls.findLast(c => c[0] === 'bufferSubData')[3]
+  scene.exports.frame(.25)
+  assert.deepEqual(calls.findLast(c => c[0] === 'bufferSubData')[3], bladeVictory)
+  scene.exports.retry()
+  scene.exports.frame(0)
+  assert.deepEqual(bladeSprites(), [], 'retry removes all blades and upgrades')
+  assert.equal(hudText(), 'TIME90HPKILLS0LV1XP0OF3WAVE1AUTOFIRE')
   scene.exports.test_gems()
   assert.deepEqual(gemColors(), [
     [.65,.4,1,1], [.25,.65,1,1], [.25,.65,1,1], [1,.8,.15,1], [1,.8,.15,1],

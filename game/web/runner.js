@@ -83,7 +83,7 @@ async function boot() {
   pauseButton.textContent = 'Pause'
   pauseButton.disabled = false
   reloadButton.disabled = false
-  status.textContent = 'WASD / arrows: move. Auto fire. Survive the waves and defeat the boss. 1 / 2 / 3: upgrade. R: restart after win or loss.'
+  status.textContent = 'WASD / arrows: move. Auto fire. Survive the waves and defeat the boss. Click a reward or press 1–6 (4 unlocks blades). R: restart after win or loss.'
   document.body.dataset.state = 'ready'
   lastTime = null
   canvas.focus({ preventScroll: true })
@@ -122,7 +122,7 @@ window.addEventListener('keydown', (event) => {
   // retain movement across shortcut modifiers, including their release.
   if (shortcutModifier(event)) { releaseInput(); return }
   if (paused || document.hidden || document.activeElement !== canvas) return
-  const upgrade = ['Digit1', 'Digit2', 'Digit3'].indexOf(event.code)
+  const upgrade = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].indexOf(event.code)
   if (upgrade >= 0) {
     event.preventDefault()
     if (!event.repeat) { lastTime = null; instance.exports.choose_upgrade(upgrade) }
@@ -144,7 +144,15 @@ window.addEventListener('keyup', (event) => {
   instance.exports.key(movementKeys.get(event.code), 0)
   if (document.activeElement === canvas) event.preventDefault()
 })
-canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }))
+canvas.addEventListener('pointerdown', event => {
+  canvas.focus({ preventScroll: true })
+  if (instance === null || paused || document.hidden || event.button !== 0 || shortcutModifier(event)) return
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0) return // Hidden/minimized canvas.
+  event.preventDefault()
+  lastTime = null
+  instance.exports.choose_reward((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height)
+})
 canvas.addEventListener('blur', releaseInput)
 window.addEventListener('blur', releaseInput)
 document.addEventListener('visibilitychange', releaseInput)

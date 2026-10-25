@@ -56,7 +56,7 @@ void init(void) {
             atlas[p+3] = body ? 255 : 0;
         }
     }
-    // XP gem, 8x4 bar segment and solid 16x16 panel tile in unused cells.
+    // XP gem, blade, 8x4 bar segment and solid 16x16 panel tile in unused cells.
     for (int y = 0; y < 64; ++y) {
         for (int x = 32; x < 64; ++x) {
             bool gem = x >= 48 && y >= 32 && y < 48 &&
@@ -64,7 +64,11 @@ void init(void) {
                 (y % 16 > 7 ? y % 16 - 7 : 7 - y % 16) <= 2;
             bool bar = x >= 48 && x < 56 && y >= 16 && y < 20;
             bool panel = x < 48 && y >= 48;
-            if (!gem && !bar && !panel) continue;
+            int px = x % 16, py = y % 16;
+            bool blade = x >= 48 && y >= 48 && px >= 3 && px <= 12 &&
+                ((px - py >= -1 && px - py <= 1) ||
+                 (px >= 3 && px <= 6 && px + py >= 9 && px + py <= 11));
+            if (!gem && !bar && !panel && !blade) continue;
             int p = (y * 128 + x) * 4;
             atlas[p] = atlas[p+1] = atlas[p+2] = atlas[p+3] = 255;
         }
@@ -116,7 +120,7 @@ void init(void) {
     r2_init(&state.renderer, state.atlas, state.lut);
 }
 
-enum { SPRITE_CAPACITY = 1 + SIM_MAX_ENEMIES + SIM_MAX_BULLETS + SIM_MAX_HOSTILE_BULLETS + SIM_MAX_GEMS + 256 };
+enum { SPRITE_CAPACITY = 1 + SIM_MAX_ENEMIES + SIM_MAX_BULLETS + SIM_MAX_HOSTILE_BULLETS + SIM_MAX_GEMS + SIM_MAX_BLADES + 576 };
 _Static_assert(SPRITE_CAPACITY <= R2_MAX_SPRITES, "game sprite capacity exceeds renderer");
 
 static void add_text(r2_sprite *sprites, int *count, const char *text, float x, float y) {
@@ -142,6 +146,119 @@ static void add_number(r2_sprite *sprites, int *count, unsigned number, float x,
     add_text(sprites, count, text, x, y);
 }
 
+typedef struct { float x, y; int width; } reward_card;
+
+static reward_card reward_layout(int slot) {
+    int columns = state.simulation.blade_count ? 3 : 2;
+    assert(slot >= 0 && slot < columns * 2);
+    return (reward_card){
+        .x = columns == 3 ? (slot % columns - 1) * 104.0f : (slot % columns ? 72.0f : -72.0f),
+        .y = slot < columns ? 40.0f : -40.0f,
+        .width = columns == 3 ? 96 : 128,
+    };
+}
+
+static bool choose_reward_slot(int slot) {
+    assert(slot >= 0 && slot < 6);
+    int option = slot;
+    if (slot == 3) option = state.simulation.blade_count ? SIM_UPGRADE_BLADE_DAMAGE : SIM_UPGRADE_BLADES;
+    else if (slot == 4) option = SIM_UPGRADE_BLADE_COUNT;
+    else if (slot == 5) option = SIM_UPGRADE_BLADE_SPEED;
+    if (!sim_choose_upgrade(&state.simulation, option)) return false;
+    for (int i = 0; i < GAME_KEY_COUNT; ++i) state.keys[i] = false;
+    return true;
+}
+
+static float viewport_zoom(int width, int height) {
+    assert(width > 0 && height > 0);
+    float x = 320.0f / width, y = 240.0f / height;
+    return x > y ? x : y;
+}
+
+void app_choose_reward(float nx, float ny) {
+    if (!state.simulation.choosing) return;
+    // Pointer capture/window borders can produce coordinates outside the canvas.
+    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
+    sg_swapchain swapchain = get_sokol_swapchain();
+    if (swapchain.width <= 0 || swapchain.height <= 0) return;
+    float zoom = viewport_zoom(swapchain.width, swapchain.height);
+    float x = (nx - .5f) * swapchain.width * zoom;
+    float y = (.5f - ny) * swapchain.height * zoom;
+    int count = state.simulation.blade_count ? 6 : 4;
+    for (int i = 0; i < count; ++i) {
+        reward_card card = reward_layout(i);
+        if (x >= card.x - card.width / 2 && x <= card.x + card.width / 2 &&
+            y >= card.y - 32 && y <= card.y + 32) {
+            choose_reward_slot(i);
+            return;
+        }
+    }
+}
+
+// Crop solid atlas cells into rectangles; no new shader or scaling contract.
+static void add_ui_rect(r2_sprite *sprites, int *count, float cx, float cy,
+                        int width, int height, const float color[3]) {
+    for (int y = 0; y < height; y += 16) {
+        for (int x = 0; x < width; x += 16) {
+            int w = width - x < 16 ? width - x : 16;
+            int h = height - y < 16 ? height - y : 16;
+            assert(*count < SPRITE_CAPACITY);
+            sprites[(*count)++] = (r2_sprite){
+                .pos = {cx - width / 2.0f + x + w / 2.0f, cy - height / 2.0f + y + h / 2.0f},
+                .opacity = 1, .uv = {.25f,.75f,.25f + w / 128.0f,.75f + h / 64.0f},
+                .color_add = {color[0],color[1],color[2],1},
+            };
+        }
+    }
+}
+
+static void add_card_text(r2_sprite *sprites, int *count, const char *text,
+                          float x, float y, int width, bool enabled) {
+    int length = 0;
+    while (text[length]) ++length;
+    assert(length * 8 <= width); // Never silently clip or truncate a card label.
+    int start = *count;
+    add_text(sprites, count, text, x - (length - 1) * 4 + 2, y);
+    if (!enabled) {
+        for (int i = start; i < *count; ++i) {
+            sprites[i].color_add[0] = .45f;
+            sprites[i].color_add[1] = .48f;
+            sprites[i].color_add[2] = .52f;
+            sprites[i].color_add[3] = 1;
+        }
+    }
+}
+
+static void add_reward_cards(r2_sprite *sprites, int *count, const sim_state *s) {
+    const char *categories[] = {"SHOTS", "SHOTS", "PLAYER", "BLADES", "BLADES", "BLADES"};
+    const char *names[] = {"DAMAGE", "FIRE RATE", "MOVE SPEED", s->blade_count ? "DAMAGE" : "UNLOCK", "COUNT", "SPIN SPEED"};
+    const char *effects[] = {"PLUS 1", "FASTER", "PLUS 8", s->blade_count ? "PLUS 1" : "2 BLADES", "PLUS 1", "FASTER"};
+    const bool enabled[] = {true, s->shot_interval > SIM_MIN_SHOT_TICKS, true, true,
+        s->blade_count < SIM_MAX_BLADES, s->blade_speed < SIM_BLADE_MAX_SPEED};
+    int cards = s->blade_count ? 6 : 4;
+    add_card_text(sprites, count, "LEVEL UP", 0, 84, 320, true);
+    for (int i = 0; i < cards; ++i) {
+        reward_card card = reward_layout(i);
+        const float body[] = {.035f,.05f,.075f};
+        const float accent[] = {enabled[i] ? (i == 2 ? .9f : .3f) : .2f,
+                                enabled[i] ? .75f : .25f, enabled[i] ? .85f : .3f};
+        add_ui_rect(sprites, count, card.x, card.y, card.width, 64, body);
+        add_ui_rect(sprites, count, card.x, card.y + 31, card.width, 2, accent);
+        add_ui_rect(sprites, count, card.x, card.y - 31, card.width, 2, accent);
+        add_ui_rect(sprites, count, card.x - card.width / 2 + 1, card.y, 2, 60, accent);
+        add_ui_rect(sprites, count, card.x + card.width / 2 - 1, card.y, 2, 60, accent);
+        float badge_x = card.x - card.width / 2 + 12;
+        add_ui_rect(sprites, count, badge_x, card.y + 20, 16, 16, accent);
+        char key[] = {(char)('1' + i), 0};
+        add_card_text(sprites, count, key, badge_x, card.y + 20, 16, enabled[i]);
+        add_card_text(sprites, count, categories[i], card.x + 8, card.y + 20, card.width - 32, enabled[i]);
+        add_card_text(sprites, count, names[i], card.x, card.y, card.width - 16, enabled[i]);
+        add_card_text(sprites, count, enabled[i] ? effects[i] : "MAX", card.x, card.y - 20, card.width - 16, enabled[i]);
+    }
+    add_card_text(sprites, count, "CHOOSE ONE REWARD", 0, -88, 320, true);
+    add_card_text(sprites, count, s->blade_count ? "PRESS 1 TO 6 OR CLICK" : "PRESS 1 TO 4 OR CLICK", 0, -104, 320, true);
+}
+
 void frame(double elapsed) {
     sg_swapchain swapchain = get_sokol_swapchain();
     if (swapchain.width <= 0 || swapchain.height <= 0) return;
@@ -156,11 +273,9 @@ void frame(double elapsed) {
     if (!was_choosing && state.simulation.choosing)
         for (int i = 0; i < GAME_KEY_COUNT; ++i) state.keys[i] = false;
     if (input.x && !state.simulation.dead && !state.simulation.won && !state.simulation.choosing) state.face_left = input.x < 0;
-    float zoom_x = 320.0f / swapchain.width;
-    float zoom_y = 240.0f / swapchain.height;
     r2_camera camera = r2_camera_make(0, 0, (float)swapchain.width,
                                      (float)swapchain.height,
-                                     zoom_x > zoom_y ? zoom_x : zoom_y);
+                                     viewport_zoom(swapchain.width, swapchain.height));
     r2_tilemap maps[] = {
         {.tile_size = {16,16}, .tileset_uv = {0,0,.25f,.5f},
          .lut_uv = {0,0,1.0f/SIM_WIDTH,1.0f/(SIM_HEIGHT + 1)},
@@ -178,6 +293,14 @@ void frame(double elapsed) {
         .uv = {0,0,.125f,.25f}, .flip = state.face_left ? 1 : 0,
         .color_add = {1,0,0,s->dead ? 1 : 0},
     };
+    for (int i = 0; i < s->blade_count; ++i) {
+        float x, y;
+        if (!sim_blade_position(s, i, &x, &y)) continue;
+        sprites[count++] = (r2_sprite){
+            .pos = {x,y}, .opacity = 1, .flip = i % 2,
+            .uv = {.375f,.75f,.5f,1}, .color_add = {.65f,1,.9f,1},
+        };
+    }
     for (int i = 0; i < SIM_MAX_GEMS; ++i) {
         const sim_gem *gem = &s->gems[i];
         if (!gem->active) continue;
@@ -258,20 +381,7 @@ void frame(double elapsed) {
     add_text(sprites, &count, "OF", 112, 112);
     add_number(sprites, &count, (unsigned)s->xp_next, 136, 112);
     if (s->choosing) {
-        for (int row = 0; row < 6; ++row) {
-            for (int col = 0; col < 14; ++col) {
-                sprites[count++] = (r2_sprite){
-                    .pos = {-104 + col * 16.0f,-40 + row * 16.0f}, .opacity = .97f,
-                    .uv = {.25f,.75f,.375f,1}, .color_add = {.04f,.05f,.08f,1},
-                };
-            }
-        }
-        add_text(sprites, &count, "LEVEL UP", -28, 32);
-        add_text(sprites, &count, "1 DAMAGE PLUS 1", -76, 12);
-        add_text(sprites, &count, s->shot_interval > SIM_MIN_SHOT_TICKS ?
-                 "2 FASTER ATTACKS" : "2 ATTACK MAX", -76, -8);
-        add_text(sprites, &count, "3 SPEED PLUS 8", -76, -28);
-        add_text(sprites, &count, "CHOOSE 1 2 3", -44, -100);
+        add_reward_cards(sprites, &count, s);
     } else if (s->dead || s->won) {
         add_text(sprites, &count, s->won ? "YOU WIN" : "YOU DIED", s->won ? -24 : -28, -96);
         add_text(sprites, &count, "R RETRY", -24, -108);
@@ -293,7 +403,7 @@ void frame(double elapsed) {
     } else {
         add_text(sprites, &count, "WAVE", -132, -100);
         add_number(sprites, &count, (unsigned)sim_wave(s), -92, -100);
-        add_text(sprites, &count, "AUTO FIRE", -32, -100);
+        add_text(sprites, &count, s->blade_count ? "SHOT AND BLADES" : "AUTO FIRE", s->blade_count ? -52 : -32, -100);
     }
     sg_begin_pass(&(sg_pass){
         .action = {.colors[0] = {.load_action = SG_LOADACTION_CLEAR,
@@ -322,6 +432,12 @@ void event(const sapp_event *e) {
         state.simulation.accumulator = 0;
         return;
     }
+    if (e->type == SAPP_EVENTTYPE_MOUSE_DOWN && e->mouse_button == SAPP_MOUSEBUTTON_LEFT &&
+        state.simulation.choosing) {
+        assert(e->window_width > 0 && e->window_height > 0);
+        app_choose_reward(e->mouse_x / e->window_width, e->mouse_y / e->window_height);
+        return;
+    }
     if (e->type != SAPP_EVENTTYPE_KEY_DOWN && e->type != SAPP_EVENTTYPE_KEY_UP) return;
     if (e->type == SAPP_EVENTTYPE_KEY_DOWN && e->key_code == SAPP_KEYCODE_R &&
         !e->key_repeat && (state.simulation.dead || state.simulation.won)) {
@@ -331,9 +447,8 @@ void event(const sapp_event *e) {
         return;
     }
     if (e->type == SAPP_EVENTTYPE_KEY_DOWN && !e->key_repeat &&
-        e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_3) {
-        if (sim_choose_upgrade(&state.simulation, e->key_code - SAPP_KEYCODE_1))
-            for (int i = 0; i < GAME_KEY_COUNT; ++i) state.keys[i] = false;
+        e->key_code >= SAPP_KEYCODE_1 && e->key_code <= SAPP_KEYCODE_6) {
+        choose_reward_slot(e->key_code - SAPP_KEYCODE_1);
         return;
     }
     if (state.simulation.choosing && e->type == SAPP_EVENTTYPE_KEY_DOWN) return;

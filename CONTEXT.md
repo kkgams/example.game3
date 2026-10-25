@@ -6,7 +6,8 @@ Current milestone: a first survivor combat loop in a fixed tilemap arena, using
 shared tilemap/sprite pipelines and procedural textures. Movement, tile collision,
 three enemy archetypes, automatic aimed shots, contact damage, XP gems,
 health/kills/level/XP/timer HUD, paused level-up choices, a three-wave 90-second
-countdown, a two-phase final boss, win/loss and R restart are implemented. Authored scenarios and additional skills are not. A minimal gams.json provides
+countdown, a two-phase final boss, optional orbiting blades, win/loss and R
+restart are implemented. Authored scenarios and further weapons are not. A minimal gams.json provides
 Files/Code editing and opens in GAMS (owner-verified); the game renderer is not
 embedded in a Host View.
 
@@ -17,7 +18,13 @@ to a separate task; do not port the old generated decoders or director now.
 
 Ownership:
 - game/main.c: procedural textures, shared keyboard state and simulation/render
-  integration; rendered tiles come from the collision map source.
+  integration; rendered tiles come from the collision map source. Reward UI uses
+  four 2x2 cards before blade unlock, then six 3x2 cards. Bordered cards share
+  layout/hitboxes, assert label widths and fit the minimum 320x240 viewport.
+  app_choose_reward accepts normalized canvas/window coordinates, converts via
+  the same viewport zoom as rendering, and shares selection guards with keys.
+  Native mouse positions normalize against logical window size (not framebuffer
+  size); browser pointer input normalizes CSS canvas bounds, independent of DPR.
 - game/sim.{h,c}: platform-independent 120 Hz movement and swept tile collision;
   normalized diagonal movement, 64 pixels/second, 0.25-second frame-time cap.
   Also owns bounded enemy/projectile pools, deterministic perimeter spawns,
@@ -25,7 +32,8 @@ Ownership:
   cooldowns, kills, XP drops/collection, level-up freeze and frozen death state.
   The 64-slot gem pool merges overflow value into an existing gem. Initial XP
   threshold is 3, rising by 2 per level; surplus XP queues distinct choices.
-  sim_choose_upgrade accepts damage, attack-rate or movement-speed choices;
+  sim_choose_upgrade accepts shot damage/rate, movement speed, blade unlock,
+  blade damage/count/spin choices;
   capped attack rate consumes nothing. sim_init fully resets the run and stats.
   Enemy kinds are chaser, runner, brute and boss. Authored, non-linear XP
   rewards are 1 for chasers, 2 for fast runners and 5 for brutes (3x chaser HP,
@@ -37,6 +45,14 @@ Ownership:
   at half health. A separate 32-shot hostile pool prevents weapon starvation.
   Boss death sets won, clears threats and freezes the world before hostile hits;
   both won and dead require a full restart. The run clock pauses for choices.
+  Blades unlock with count 2, damage 1, radius 22 and phase step 4/960 per tick
+  (2-second revolution). Count caps at 4; spin adds 2 up to 12 (2/3-second orbit).
+  Blade damage is independent from shot damage. sim_blade_position shares the
+  wall-clipped, interpolated circle with rendering; no platform trig library.
+  Sweeps cleave; a per-enemy 30-tick blade cooldown prevents per-frame stacking,
+  and fresh spawns reset it. Both weapons use shared hit_enemy kill/XP/victory
+  handling; blade slots are independent from projectiles and do not block enemy
+  shots. Upgrade/result freezes include the orbit; sim_init resets the weapon.
 - game/font.h: small authored 5x7 uppercase/digit HUD glyphs, rasterized into
   the procedural atlas; no downloaded font or new rendering dependency.
 - game/app.h: shared app callbacks and eight-binding scalar browser key ABI.
@@ -44,9 +60,14 @@ Ownership:
   requestAnimationFrame timestamps, resetting its clock/input on focus loss,
   visibility changes and pause. WASD/arrows remain separate held bindings.
   Browser retry() translates to the same R key event as native; retry applies
-  only to won/dead runs and clears held movement and facing. choose_upgrade(0..2)
-  translates to the same top-row 1/2/3 events as native; accepted choices clear
+  only to won/dead runs and clears held movement and facing. choose_upgrade(0..5)
+  maps UI slots to the same top-row 1–6 events as native (not raw simulation
+  upgrade enum values). Existing 0–2 semantics are unchanged. Key 4 unlocks blades,
+  then upgrades blade damage; 5/6 upgrade count/spin only after unlocking; accepted choices clear
   held movement and paused frame-time debt. Key repeats cannot consume choices.
+  choose_reward(x,y) is the browser's normalized pointer ABI; only primary,
+  unmodified canvas clicks while active are forwarded. MAX/gap/outside-card
+  clicks consume nothing. Card selection still uses the same simulation enum.
 - game/render/: C renderer API, instanced tilemap/sprite pipelines and adapted
   shaders; README.md documents the contract, PROVENANCE.md records original
   inputs. No external artwork or packed resources.
@@ -61,7 +82,7 @@ Ownership:
   sokol_glue.h; embedded licenses preserved. Existing files are never downloaded
   again by ordinary builds.
 - Makefile and test/: independent build and WASM/JS ABI verification, including
-  timed-run regression tests. test/scene.c includes the real app in a separate
+  timed-run and orbiting-blade regression tests. test/scene.c includes the real app in a separate
   test-only WASM for staged wave/boss/victory render checks; the production
   binary has no test-stage exports. Generated fixtures stay in build.nosync/.
 - SOURCE.json: original source locations/revision and pre-adaptation hashes.

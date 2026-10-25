@@ -6,7 +6,8 @@ Shared tilemap and instanced-sprite pipelines, two targets: **macOS Metal** and
 **WASD or arrow keys**. Attacks fire automatically at nearby visible enemies.
 Chasers, runners and brutes hunt around the solid outer walls and central block;
 contact costs health. Survive three 30-second waves, then defeat the final boss. Collect XP gems to fill the XP bar. Level-up pauses the world;
-press **1** for damage, **2** for attack speed, or **3** for movement speed.
+press **1–3** for shot damage, shot speed or movement speed; **4** unlocks
+orbiting blades. Once unlocked, **4–6** upgrade blade damage, count or spin.
 The HUD shows time remaining, wave, health, kills, level and XP, plus boss health
 during the duel. After winning or dying, press **R** to restart.
 Assets, the map and spawn timing remain procedural/hand-authored.
@@ -34,7 +35,8 @@ make clean       # remove generated output
 ```
 
 Browser controls: WASD/arrows while the canvas has focus (click it to refocus),
-plus Pause/Resume and Reload. Use top-row 1/2/3 for level-up choices.
+plus Pause/Resume and Reload. Select a reward card by clicking it or using its
+number key (1–6; 4 unlocks blades).
 R restarts after either win or loss; Reload resets the whole run. Pausing, losing focus,
 hiding the tab or using shortcut modifiers releases held movement keys and resets
 the browser frame clock (including macOS Command combinations with missing keyup).
@@ -148,7 +150,7 @@ Boss death wins its simulation tick before hostile/contact damage. Loss also
 freezes the run, and R fully restarts either result.
 
 These are hard-coded encounters, not a scenario format or balance promise.
-BulletML, additional skills, GAMS-authored scenarios and title/credits remain
+BulletML, further weapons, GAMS-authored scenarios and title/credits remain
 deferred; the boss ring is a small authored C pattern, not a BulletML runner. The HUD uses a small authored bitmap font in the same atlas,
 so native and browser show the same result/retry prompt without new libraries.
 
@@ -168,19 +170,47 @@ slots are occupied, new XP merges into the nearest existing gem rather than bein
 lost. A level starts at 3 XP; each next threshold costs 2 more (3, 5, 7, ...).
 
 Reaching the threshold pauses movement, enemies, shots, pickups, spawning and all
-simulation timers. A fresh top-row key press chooses one upgrade:
+simulation timers. Rewards appear as individual numbered cards: a 2x2 grid
+before unlocking blades, then a 3x2 grid. Each card separates its category,
+upgrade and effect; unavailable capped cards are dimmed and marked MAX.
+Click a card or press its top-row number to choose:
 
-- **1 Damage:** +1 hit damage, also applied to shots already in flight.
-- **2 Attack speed:** subtract 6 fixed ticks (0.05 seconds) from the fire interval,
+- **1 Shot damage:** +1 hit damage, also applied to shots already in flight.
+- **2 Shot speed:** subtract 6 fixed ticks (0.05 seconds) from the fire interval,
   down to 12 ticks (0.1 seconds). At the cap it shows MAX and consumes no choice.
 - **3 Movement speed:** +8 world pixels/second, retaining diagonal normalization
   and swept wall collision.
+- **4 Unlock blades:** gain two orbiting blades. After unlocking, this key instead
+  gives **+1 blade damage**. Shot and blade damage are independent.
+- **5 Blade count:** +1 blade, capped at four; unavailable until unlocked.
+- **6 Blade spin:** faster rotation, capped at three times the starting speed;
+  unavailable until unlocked. Capped choices show MAX and consume no XP.
 
 An accepted choice consumes its threshold, increments the level and resumes with
 no accumulated pause time or held movement. Excess XP is preserved; if enough
 remains for another level, the next choice stays open and requires another fresh
 key press. Damage and movement upgrades stack; this is prototype tuning, not a
 finished balance model. Retry clears gems, XP, levels and all stat upgrades.
+
+## Orbiting blades
+
+Blades are an optional second automatic weapon, not a replacement for shots.
+They start at **1 damage**, **two blades**, **22-pixel radius** and **one revolution
+every two seconds**. Blades are evenly spaced and follow player movement. Each
+spin upgrade adds half the starting speed, down to a two-thirds-second orbit.
+Count and spin caps leave damage/movement/shot upgrades available.
+
+Swept blade hits can cleave multiple enemies. Each enemy has a shared **0.25-second
+blade-hit cooldown**, preventing per-frame or simultaneous multi-blade damage;
+shots ignore this cooldown. Walls clip the orbit: occluded blades are hidden and
+cannot damage through walls. Blades damage enemies, **not hostile projectiles**.
+They do not consume projectile slots, even when those pools are full.
+
+Both weapons use the same kill/XP/victory handling, including boss-kill priority
+over hostile/contact damage. Boss entry retains the weapon. Choices, death and
+victory freeze the orbit; retry resets unlocks, stats, phase and hit cooldowns.
+Positions are owned by the fixed-step simulation and shared with rendering via
+sim_blade_position; a 32-point interpolated circle avoids host sin/cos dependencies.
 
 ## Rendering and verification
 
@@ -192,7 +222,7 @@ pack, BulletML or gameplay systems were imported. The original triangle shader
 is retained as a shader-generation test fixture, not drawn by the app. Output
 filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
 
-- `make test`: passed (13 Node tests). Includes standalone C movement/collision
+- `make test`: passed (15 Node tests). Includes standalone C movement/collision
   assertions (movement, fixed-step timing, collision, spawning, chase paths,
   targeting/line of sight, swept projectile hits, pool saturation, contact damage,
   death/reset, XP drops/attraction, blocked pickups, pool merging, exact collection,
@@ -204,6 +234,16 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   saturation, victory/loss, full reset and a full timeline-to-victory simulation.
   Reward tests verify each enemy tier, overkill independence, exact collection,
   five-XP pool merging, surplus/queued choices and gem-color tier boundaries.
+  Blade tests cover unlock/upgrade guards and caps, independent damage, orbit
+  radius/spacing, moving origins, 30/60/144 Hz timing, pause/result freeze,
+  swept hits, cleaving, cooldowns, walls, spawn-slot reuse, full projectile pools,
+  tiered XP, boss entry/kill and full reset. The real WASM app checks XP-to-menu,
+  4-to-unlock/4–6-to-upgrade mapping, animation, capped menus, melee kill-to-gem
+  submission, blade boss victory and retry. Reward-card tests check all label
+  and body bounds at 320x240, portrait, ultrawide and tiny framebuffer sizes;
+  keyboard/click parity, gap/outside/MAX rejection, and native logical-point vs
+  HiDPI framebuffer coordinates. Browser runner tests cover CSS-relative pointer
+  coordinates and ignore paused/hidden/modified/secondary clicks.
   Real enemy-kill-to-render checks ensure chasers produce purple, runners blue,
   and brutes gold without requiring pool-overflow merges.
   That last test uses invulnerability to isolate flow from balance, not to claim
@@ -215,7 +255,15 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   automatic kills, purple gems, XP bar, paused choice panel, damage selection,
   level/XP update, death/result and R retry. A staged, test-only Chrome fixture
   also verified the boss silhouette, ring shots, health bar and victory screen.
-  A complete human balance playtest of the new waves/boss remains outstanding. Earlier checks verified obstacle
+  Blade unlock/upgrade menus and the orbiting sword silhouettes were also
+  visually verified in a separate staged Chrome fixture. The new four/six-card
+  layouts and a real pointer unlock were checked at desktop and 375x667 @2x.
+  `test/card-pixels.mjs` is a headed WebGL pixel regression, separate from the
+  Node suite: stage the six-card app fixture at that portrait size and call
+  assertCardPixelSeams(canvas, wasmExports.frame). Its 21 background samples
+  reproduced atlas-edge transparency before the shader fix and pass afterward.
+  Full human weapon
+  balance playtesting remains outstanding. Earlier checks verified obstacle
   sliding, outer-wall collision, focus release, sprite flips, opacity and tint.
 - Zig 0.17.0: `make native`, `make smoke-native` and `make test` pass.
   The native recipe uses `--sysroot "$SDK" -F/System/Library/Frameworks`:

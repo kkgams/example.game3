@@ -65,6 +65,10 @@ An instance contains center position, normalized depth, opacity, scalar uint32 f
 flags, normalized UV rectangle, RGB tint/strength and signed integer pixel offset.
 The atlas rectangle size determines world sprite size. The original shader's
 UV orientation is preserved. Offsets affect geometry, not atlas lookup.
+Fragment UVs are clamped to the source cell's outermost texel centers, preventing
+an exact edge sample from fetching a neighbouring transparent texel at fractional
+zoom. This clamp does not shrink geometry or the interpolated UV span; source
+pixel scale and all flips remain unchanged.
 
 Flip bits are H=1, V=2 and anti-diagonal=4 (values 0..7). C layouts use explicit
 strides/`offsetof`; flip uses `SG_VERTEXFORMAT_UINT`, offset uses
@@ -80,23 +84,32 @@ tint by its fourth component. Strength 0 leaves source RGB unchanged.
 The original tile area occupies the first 32x32 texels; tilemap instances use
 that atlas subrectangle to preserve tile IDs. Extra cells hold an enemy, bullet,
 health pip, XP gem, bar segment, dark panel tile and authored 5x7 bitmap glyphs.
+The free cell at X=48,Y=48 holds the orbiting blade. Visible blade positions come
+from sim_blade_position, exactly matching collision and wall clipping; no separate
+render-time clock. Blades keep the existing sprite format and shader contract.
 Unused cells at atlas Y=48 hold runner, brute, boss and hostile-shot silhouettes;
 font glyphs occupy Y<40, so the regions do not overlap.
 XP gems use value-based tint: purple for 1 XP, blue for 2–4, gold for 5+;
 merged values use the same tiers without additional sprite instances.
-All game objects, XP/boss bars, timer/wave HUD and level-up panel share one sprite
-batch, with HUD/panel submitted last. Win/loss rendering disables damage blinking
+All game objects, XP/boss bars, timer/wave HUD and reward cards share one sprite
+batch, with HUD/cards submitted last. The 2x2/3x2 card grids use cropped opaque
+panel cells for bodies, borders and key badges, without new shader attributes.
+Card labels assert their width budget; input and rendering share layout bounds. Win/loss rendering disables damage blinking
 so a frozen result cannot leave the player faded. The lookup texture is built from
 `sim_tile`, the same hand-authored source used by collision. The combat arena
 replaces the earlier flips/opacity/tint gallery; those features remain available. No packed resources, external art or generated GAMS
 models are required.
 
 `make test` checks shader generation and real WASM submission through a mock GPU,
-including integer attributes, upload sizes, projection, movement input, a full
+including blade unlock/upgrades, orbit/pause, wall-clipped positions, melee kills,
+integer attributes, upload sizes, projection, movement input, a full
 combat/XP/choice/death/retry run and a separate staged wave/boss/win fixture, minimize, cleanup and reinitialization. Separate C tests
 cover movement/collision, combat, progression and complete run flow; runner tests cover browser
 keys, upgrade choices, retry,
 clock and focus/pause lifecycle. These do not
 prove shader pixels. Chrome visual/movement checks and a three-frame real Metal
 smoke run were performed. Native/web builds and tests pass with Zig 0.17.0;
-see root README.md for verification details.
+see root README.md for verification details. The headed pixel regression in
+`test/card-pixels.mjs` checks for transparent atlas seams at fractional portrait
+zoom; it failed on the original shader and passes with fragment-side UV clamping.
+It is not part of the mock-GPU Node suite.

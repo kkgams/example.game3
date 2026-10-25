@@ -40,6 +40,10 @@ bool sim_choose_upgrade(sim_state *state, int option) {
     assert(state && option >= 0 && option < SIM_UPGRADE_COUNT);
     if (state->dead || state->won || !state->choosing) return false;
     if (option == SIM_UPGRADE_ATTACK && state->shot_interval == SIM_MIN_SHOT_TICKS) return false;
+    if (option == SIM_UPGRADE_BLADES && state->blade_count) return false;
+    if (option >= SIM_UPGRADE_BLADE_DAMAGE && !state->blade_count) return false;
+    if (option == SIM_UPGRADE_BLADE_COUNT && state->blade_count == SIM_MAX_BLADES) return false;
+    if (option == SIM_UPGRADE_BLADE_SPEED && state->blade_speed == SIM_BLADE_MAX_SPEED) return false;
     assert(state->xp >= state->xp_next && state->xp_next <= INT_MAX - 2 && state->level < INT_MAX);
     switch (option) {
     case SIM_UPGRADE_DAMAGE:
@@ -53,6 +57,21 @@ bool sim_choose_upgrade(sim_state *state, int option) {
         break;
     case SIM_UPGRADE_SPEED:
         state->move_speed += 8;
+        break;
+    case SIM_UPGRADE_BLADES:
+        state->blade_count = 2;
+        state->blade_damage = 1;
+        state->blade_speed = 4;
+        break;
+    case SIM_UPGRADE_BLADE_DAMAGE:
+        assert(state->blade_damage < INT_MAX);
+        ++state->blade_damage;
+        break;
+    case SIM_UPGRADE_BLADE_COUNT:
+        ++state->blade_count;
+        break;
+    case SIM_UPGRADE_BLADE_SPEED:
+        state->blade_speed += 2;
         break;
     }
     state->xp -= state->xp_next;
@@ -308,6 +327,27 @@ static void collect_gems(sim_state *state) {
     state->choosing = state->xp >= state->xp_next;
 }
 
+static void hit_enemy(sim_state *state, sim_enemy *enemy, int damage) {
+    assert(enemy->active && enemy->hp > 0 && damage > 0);
+    if (damage < enemy->hp) { enemy->hp -= damage; return; }
+    enemy->hp = 0;
+    enemy->active = false;
+    ++state->kills;
+    if (enemy->kind == SIM_BOSS) {
+        state->won = true;
+        state->choosing = false;
+        for (int k = 0; k < SIM_MAX_ENEMIES; ++k) state->enemies[k].active = false;
+        for (int k = 0; k < SIM_MAX_BULLETS; ++k) state->bullets[k].active = false;
+        for (int k = 0; k < SIM_MAX_HOSTILE_BULLETS; ++k) state->hostile_bullets[k].active = false;
+        return; // Victory wins this tick before hostile/contact damage.
+    }
+    // Reward threat, not remaining HP: fast runners earn the
+    // middle tier; brutes have 3x chaser health but award 5x XP.
+    const int rewards[] = {1, 2, 5};
+    assert(enemy->kind >= SIM_CHASER && enemy->kind <= SIM_BRUTE);
+    drop_gem(state, enemy->x, enemy->y, rewards[enemy->kind]);
+}
+
 static void projectiles(sim_state *state) {
     for (int i = 0; i < SIM_MAX_BULLETS; ++i) {
         sim_bullet *bullet = &state->bullets[i];
@@ -329,31 +369,94 @@ static void projectiles(sim_state *state) {
             bullet->x += dx * first; bullet->y += dy * first;
             bullet->active = false;
             if (target >= 0) {
-                sim_enemy *enemy = &state->enemies[target];
-                assert(state->damage > 0);
-                enemy->hp -= state->damage;
-                if (enemy->hp <= 0) {
-                    enemy->hp = 0;
-                    enemy->active = false;
-                    ++state->kills;
-                    if (enemy->kind == SIM_BOSS) {
-                        state->won = true;
-                        state->choosing = false;
-                        for (int k = 0; k < SIM_MAX_ENEMIES; ++k) state->enemies[k].active = false;
-                        for (int k = 0; k < SIM_MAX_BULLETS; ++k) state->bullets[k].active = false;
-                        for (int k = 0; k < SIM_MAX_HOSTILE_BULLETS; ++k) state->hostile_bullets[k].active = false;
-                        return; // Victory wins this tick before hostile/contact damage.
-                    }
-                    // Reward threat, not remaining HP: fast runners earn the
-                    // middle tier; brutes have 3x chaser health but award 5x XP.
-                    const int rewards[] = {1, 2, 5};
-                    assert(enemy->kind >= SIM_CHASER && enemy->kind <= SIM_BRUTE);
-                    drop_gem(state, enemy->x, enemy->y, rewards[enemy->kind]);
-                }
+                hit_enemy(state, &state->enemies[target], state->damage);
+                if (state->won) return;
             }
         } else { bullet->x += dx; bullet->y += dy; }
         --bullet->ticks_left;
         if (bullet->ticks_left == 0) bullet->active = false;
+    }
+}
+
+// Authored unit circle, linearly interpolated in fixed phase units. No host
+// sin/cos or platform math imports; renderer and collision share these points.
+_Static_assert(SIM_BLADE_PERIOD == 32u * 30u, "blade circle must match phase units");
+static const float blade_circle[32][2] = {
+    {1.0f, 0.0f},
+    {0.98078528f, 0.19509032f},
+    {0.92387953f, 0.38268343f},
+    {0.83146961f, 0.55557023f},
+    {0.70710678f, 0.70710678f},
+    {0.55557023f, 0.83146961f},
+    {0.38268343f, 0.92387953f},
+    {0.19509032f, 0.98078528f},
+    {0.0f, 1.0f},
+    {-0.19509032f, 0.98078528f},
+    {-0.38268343f, 0.92387953f},
+    {-0.55557023f, 0.83146961f},
+    {-0.70710678f, 0.70710678f},
+    {-0.83146961f, 0.55557023f},
+    {-0.92387953f, 0.38268343f},
+    {-0.98078528f, 0.19509032f},
+    {-1.0f, 0.0f},
+    {-0.98078528f, -0.19509032f},
+    {-0.92387953f, -0.38268343f},
+    {-0.83146961f, -0.55557023f},
+    {-0.70710678f, -0.70710678f},
+    {-0.55557023f, -0.83146961f},
+    {-0.38268343f, -0.92387953f},
+    {-0.19509032f, -0.98078528f},
+    {0.0f, -1.0f},
+    {0.19509032f, -0.98078528f},
+    {0.38268343f, -0.92387953f},
+    {0.55557023f, -0.83146961f},
+    {0.70710678f, -0.70710678f},
+    {0.83146961f, -0.55557023f},
+    {0.92387953f, -0.38268343f},
+    {0.98078528f, -0.19509032f}
+};
+
+static void blade_point(int count, int blade, unsigned phase, float cx, float cy, float *x, float *y) {
+    unsigned p = (phase + (unsigned)blade * SIM_BLADE_PERIOD / (unsigned)count) % SIM_BLADE_PERIOD;
+    unsigned index = p / 30, next = (index + 1) % 32;
+    float t = (p % 30) / 30.0f;
+    *x = cx + SIM_BLADE_RADIUS * (blade_circle[index][0] + t * (blade_circle[next][0] - blade_circle[index][0]));
+    *y = cy + SIM_BLADE_RADIUS * (blade_circle[index][1] + t * (blade_circle[next][1] - blade_circle[index][1]));
+}
+
+bool sim_blade_position(const sim_state *state, int blade, float *x, float *y) {
+    assert(state && x && y && state->blade_count > 0 && state->blade_count <= SIM_MAX_BLADES);
+    assert(blade >= 0 && blade < state->blade_count && state->blade_phase < SIM_BLADE_PERIOD);
+    blade_point(state->blade_count, blade, state->blade_phase, state->x, state->y, x, y);
+    return wall_hit(state->x, state->y, *x - state->x, *y - state->y, SIM_BLADE_HALF) > 1;
+}
+
+static void blades(sim_state *state, float old_x, float old_y) {
+    if (!state->blade_count) return;
+    assert(state->blade_count > 0 && state->blade_count <= SIM_MAX_BLADES);
+    assert(state->blade_speed >= 4 && state->blade_speed <= SIM_BLADE_MAX_SPEED);
+    unsigned old_phase = state->blade_phase;
+    state->blade_phase = (old_phase + state->blade_speed) % SIM_BLADE_PERIOD;
+    for (int j = 0; j < SIM_MAX_ENEMIES; ++j)
+        if (state->enemies[j].blade_hurt_ticks > 0) --state->enemies[j].blade_hurt_ticks;
+    for (int i = 0; i < state->blade_count; ++i) {
+        float x, y, previous_x, previous_y;
+        if (!sim_blade_position(state, i, &x, &y)) continue;
+        blade_point(state->blade_count, i, old_phase, old_x, old_y, &previous_x, &previous_y);
+        float dx = x - previous_x, dy = y - previous_y;
+        float wall = wall_hit(previous_x, previous_y, dx, dy, SIM_BLADE_HALF);
+        for (int j = 0; j < SIM_MAX_ENEMIES; ++j) {
+            sim_enemy *enemy = &state->enemies[j];
+            if (!enemy->active || enemy->blade_hurt_ticks) continue;
+            // Neither a clipped orbit nor an enemy behind a wall can be hit.
+            if (wall_hit(state->x, state->y, enemy->x - state->x, enemy->y - state->y, 0) <= 1) continue;
+            float hit, half = SIM_ENEMY_HALF + SIM_BLADE_HALF;
+            if (!segment_box(previous_x, previous_y, dx, dy, enemy->x - half,
+                enemy->y - half, enemy->x + half, enemy->y + half, &hit) || hit >= wall) continue;
+            enemy->blade_hurt_ticks = SIM_BLADE_HIT_TICKS;
+            hit_enemy(state, enemy, state->blade_damage);
+            if (state->won) return;
+        }
     }
 }
 
@@ -415,7 +518,7 @@ static void hostile_projectiles(sim_state *state) {
     }
 }
 
-static void combat(sim_state *state) {
+static void combat(sim_state *state, float old_x, float old_y) {
     ++state->ticks;
     if (state->shot_ticks > 0) --state->shot_ticks;
     if (state->hurt_ticks > 0) --state->hurt_ticks;
@@ -438,6 +541,8 @@ static void combat(sim_state *state) {
     chase(state);
     shoot(state);
     projectiles(state);
+    if (state->won) return;
+    blades(state, old_x, old_y);
     if (state->won) return;
     boss_attacks(state);
     hostile_projectiles(state);
@@ -467,9 +572,10 @@ void sim_advance(sim_state *state, sim_input input, double elapsed) {
        the same ticks (e.g. 144 frames of 1/144 second versus 30 of 1/30). */
     const double rounding = 8.0 * DBL_EPSILON;
     while (state->accumulator + rounding >= SIM_STEP) {
+        float old_x = state->x, old_y = state->y;
         move_x(&state->x, state->y, SIM_PLAYER_HALF, input.x * step);
         move_y(state->x, &state->y, SIM_PLAYER_HALF, input.y * step);
-        combat(state);
+        combat(state, old_x, old_y);
         if (!state->dead && !state->won) collect_gems(state);
         state->accumulator -= SIM_STEP;
         if (state->accumulator < 0.0) state->accumulator = 0.0;
