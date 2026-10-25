@@ -27,7 +27,11 @@ Ownership:
   threshold is 3, rising by 2 per level; surplus XP queues distinct choices.
   sim_choose_upgrade accepts damage, attack-rate or movement-speed choices;
   capped attack rate consumes nothing. sim_init fully resets the run and stats.
-  Enemy kinds are chaser, runner, brute and boss. Waves change every 30 active
+  Enemy kinds are chaser, runner, brute and boss. Authored, non-linear XP
+  rewards are 1 for chasers, 2 for fast runners and 5 for brutes (3x chaser HP,
+  5x XP),
+  independent of remaining HP/overkill. Boss death ends the run without XP.
+  Gem tint reflects stored value: purple 1, blue 2–4, gold 5+, including merges. Waves change every 30 active
   seconds; at 90 seconds the arena clears for a guaranteed boss, with no regular
   spawns afterward. Boss HP is 120 and its hard-coded eight-shot ring speeds up
   at half health. A separate 32-shot hostile pool prevents weapon starvation.

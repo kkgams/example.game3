@@ -5,7 +5,7 @@ Shared tilemap and instanced-sprite pipelines, two targets: **macOS Metal** and
 **browser WebGL2/WASM**. Move a placeholder player around a fixed arena using
 **WASD or arrow keys**. Attacks fire automatically at nearby visible enemies.
 Chasers, runners and brutes hunt around the solid outer walls and central block;
-contact costs health. Survive three 30-second waves, then defeat the final boss. Collect purple XP gems to fill the XP bar. Level-up pauses the world;
+contact costs health. Survive three 30-second waves, then defeat the final boss. Collect XP gems to fill the XP bar. Level-up pauses the world;
 press **1** for damage, **2** for attack speed, or **3** for movement speed.
 The HUD shows time remaining, wave, health, kills, level and XP, plus boss health
 during the duel. After winning or dying, press **R** to restart.
@@ -119,7 +119,7 @@ choices and browser pause time. Three hard-coded waves introduce enemy types:
 | 90 seconds onward | Gold diamond boss, turning orange at half health | No ordinary spawns |
 
 Chasers have 2 HP and move at 28 pixels/second; runners have 1 HP and move at 44;
-brutes have 6 HP, move at 18 and drop 3 XP. All use cardinal BFS routing around
+brutes have 6 HP, move at 18 and drop 5 XP. All use cardinal BFS routing around
 the central block and a common 10x10 collision body. Their sprite silhouettes
 and colors differ. Spawn points are deterministic, unoccupied inner perimeter
 tile centers. Full enemy pools/occupied spawn sites skip that ordinary attempt.
@@ -154,7 +154,14 @@ so native and browser show the same result/retry prompt without new libraries.
 
 ## XP and upgrades
 
-Each regular kill drops one XP at the enemy position; brutes drop three. Gems within 32 pixels move toward
+XP rewards use authored threat tiers, not a linear HP multiplier: chasers drop
+**1 XP**, fast runners **2 XP**, and brutes **5 XP** despite having only three
+times a chaser's health. Rewards depend on enemy kind, not remaining HP or overkill.
+The final boss ends the run instead of dropping XP.
+
+Gems show their stored value: **purple = 1 XP**, **blue = 2–4 XP**,
+**gold = 5+ XP**. Merged gems update color to match their total value.
+Gems within 32 pixels move toward
 the player at 96 pixels/second, with wall-aware line of sight; distant or blocked
 gems wait in place. Collection grants their value exactly once. If all 64 gem
 slots are occupied, new XP merges into the nearest existing gem rather than being
@@ -195,6 +202,10 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   Timed-run tests cover exact wave boundaries, pause-clock behavior, type stats,
   guaranteed boss entry from a full pool, both boss phases, hostile sweeps/pool
   saturation, victory/loss, full reset and a full timeline-to-victory simulation.
+  Reward tests verify each enemy tier, overkill independence, exact collection,
+  five-XP pool merging, surplus/queued choices and gem-color tier boundaries.
+  Real enemy-kill-to-render checks ensure chasers produce purple, runners blue,
+  and brutes gold without requiring pool-overflow merges.
   That last test uses invulnerability to isolate flow from balance, not to claim
   that an automated player or a human has beaten the new encounter tuning.
   `test/scene.c` builds a separate test-only WASM to exercise real app rendering

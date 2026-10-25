@@ -211,6 +211,24 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
       if (data.getFloat32(offset + 20, true) === u && data.getFloat32(offset + 24, true) === v) return true
     return false
   }
+  function gemColors() {
+    const upload = spriteUpload(), colors = []
+    for (let offset = 0; offset < upload.byteLength; offset += 60) {
+      if (upload.getFloat32(offset + 20, true) === .375 && upload.getFloat32(offset + 24, true) === .5)
+        colors.push([36,40,44,48].map(field => upload.getFloat32(offset + field, true)))
+    }
+    return colors
+  }
+  scene.exports.test_gems()
+  assert.deepEqual(gemColors(), [
+    [.65,.4,1,1], [.25,.65,1,1], [.25,.65,1,1], [1,.8,.15,1], [1,.8,.15,1],
+  ].map(color => color.map(Math.fround)), 'XP tiers: 1 purple, 2–4 blue, 5+ gold (including merged values)')
+  const dropColors = [[.65,.4,1,1], [.25,.65,1,1], [1,.8,.15,1]]
+  for (let kind = 0; kind < dropColors.length; ++kind) {
+    scene.exports.test_drop(kind)
+    assert.deepEqual(gemColors(), [dropColors[kind].map(Math.fround)],
+      `enemy kind ${kind} produces its XP color through a real kill, not just staged gem values`)
+  }
   scene.exports.test_wave(2)
   assert.ok(hasSprite(.5, .75), 'runner silhouette reaches GPU')
   assert.match(hudText(), /^TIME60.*WAVE2AUTOFIRE$/)

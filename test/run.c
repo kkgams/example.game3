@@ -43,11 +43,52 @@ static void wave_boundaries(void) {
         float distance = 40 - s.enemies[0].y;
         assert(distance > speeds[kind] / 120 - .00001f && distance < speeds[kind] / 120 + .00001f);
     }
-    s = fixture();
+}
+static void xp_rewards(void) {
+    const int rewards[] = {1,2,5};
+    for (int kind = SIM_CHASER; kind <= SIM_BRUTE; ++kind) {
+        for (int damage = 1; damage <= 100; damage += 99) {
+            sim_state s = fixture();
+            s.damage = damage;
+            // Rewards depend on the archetype, not remaining HP or overkill.
+            s.enemies[0] = (sim_enemy){.x=-48,.y=0,.hp=1,.active=true,.kind=kind};
+            s.bullets[0] = (sim_bullet){-48,0,0,0,240,true};
+            tick(&s);
+            assert(s.kills == 1 && s.gems[0].active && s.gems[0].value == rewards[kind]);
+            s.x = s.gems[0].x; s.y = s.gems[0].y;
+            tick(&s);
+            assert(!s.gems[0].active && s.xp == rewards[kind]);
+            if (kind == SIM_BRUTE) {
+                assert(s.choosing && sim_choose_upgrade(&s, SIM_UPGRADE_DAMAGE));
+                assert(s.level == 2 && s.xp == 2 && s.xp_next == 5);
+            }
+            tick(&s);
+            assert(s.xp == (kind == SIM_BRUTE ? 2 : rewards[kind]));
+        }
+    }
+    sim_state s = fixture();
+    for (int i = 0; i < SIM_MAX_GEMS; ++i)
+        s.gems[i] = (sim_gem){-104,48,1,true};
     s.enemies[0] = (sim_enemy){.x=-48,.y=0,.hp=1,.active=true,.kind=SIM_BRUTE};
     s.bullets[0] = (sim_bullet){-48,0,0,0,240,true};
     tick(&s);
-    assert(s.kills == 1 && s.gems[0].active && s.gems[0].value == 3);
+    int total = 0;
+    for (int i = 0; i < SIM_MAX_GEMS; ++i) {
+        assert(s.gems[i].active);
+        total += s.gems[i].value;
+        s.gems[i].x = s.x; s.gems[i].y = s.y;
+    }
+    assert(total == SIM_MAX_GEMS + 5 && s.xp == 0);
+    tick(&s);
+    assert(s.choosing && s.xp == total);
+    int spent = 0;
+    while (s.choosing) {
+        spent += s.xp_next;
+        assert(sim_choose_upgrade(&s, SIM_UPGRADE_DAMAGE));
+    }
+    assert(s.xp + spent == total && s.xp < s.xp_next);
+    tick(&s);
+    assert(s.xp + spent == total); // No duplicate collection after queued choices.
 }
 static void boss_arrival_and_attacks(void) {
     sim_state s = fixture();
@@ -130,6 +171,7 @@ static void complete_run(void) {
 }
 int main(void) {
     wave_boundaries();
+    xp_rewards();
     boss_arrival_and_attacks();
     projectile_damage();
     results();

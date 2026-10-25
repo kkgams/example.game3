@@ -82,6 +82,8 @@ that atlas subrectangle to preserve tile IDs. Extra cells hold an enemy, bullet,
 health pip, XP gem, bar segment, dark panel tile and authored 5x7 bitmap glyphs.
 Unused cells at atlas Y=48 hold runner, brute, boss and hostile-shot silhouettes;
 font glyphs occupy Y<40, so the regions do not overlap.
+XP gems use value-based tint: purple for 1 XP, blue for 2–4, gold for 5+;
+merged values use the same tiers without additional sprite instances.
 All game objects, XP/boss bars, timer/wave HUD and level-up panel share one sprite
 batch, with HUD/panel submitted last. Win/loss rendering disables damage blinking
 so a frozen result cannot leave the player faded. The lookup texture is built from

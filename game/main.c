@@ -179,10 +179,16 @@ void frame(double elapsed) {
         .color_add = {1,0,0,s->dead ? 1 : 0},
     };
     for (int i = 0; i < SIM_MAX_GEMS; ++i) {
-        if (!s->gems[i].active) continue;
+        const sim_gem *gem = &s->gems[i];
+        if (!gem->active) continue;
+        assert(gem->value > 0);
+        // Color reflects actual stored XP, including full-pool merges.
+        const float colors[3][3] = {{.65f,.4f,1}, {.25f,.65f,1}, {1,.8f,.15f}};
+        int tier = gem->value >= 5 ? 2 : gem->value >= 2 ? 1 : 0;
         sprites[count++] = (r2_sprite){
-            .pos = {s->gems[i].x,s->gems[i].y}, .opacity = 1,
-            .uv = {.375f,.5f,.5f,.75f}, .color_add = {.65f,.4f,1,1},
+            .pos = {gem->x,gem->y}, .opacity = 1,
+            .uv = {.375f,.5f,.5f,.75f},
+            .color_add = {colors[tier][0],colors[tier][1],colors[tier][2],1},
         };
     }
     const sim_enemy *boss = 0;

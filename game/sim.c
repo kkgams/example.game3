@@ -344,7 +344,11 @@ static void projectiles(sim_state *state) {
                         for (int k = 0; k < SIM_MAX_HOSTILE_BULLETS; ++k) state->hostile_bullets[k].active = false;
                         return; // Victory wins this tick before hostile/contact damage.
                     }
-                    drop_gem(state, enemy->x, enemy->y, enemy->kind == SIM_BRUTE ? 3 : 1);
+                    // Reward threat, not remaining HP: fast runners earn the
+                    // middle tier; brutes have 3x chaser health but award 5x XP.
+                    const int rewards[] = {1, 2, 5};
+                    assert(enemy->kind >= SIM_CHASER && enemy->kind <= SIM_BRUTE);
+                    drop_gem(state, enemy->x, enemy->y, rewards[enemy->kind]);
                 }
             }
         } else { bullet->x += dx; bullet->y += dy; }
