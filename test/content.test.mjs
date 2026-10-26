@@ -189,7 +189,7 @@ test('both base BulletML assets have valid actions, expressions and zero-based r
   assert.equal(schema.types.BulletPatterns.type, 'vector'); assert.equal(schema.types.BulletPatterns.value, 'BulletPattern')
 })
 
-test('ranger asset matches the current C fixture cadence, parameters and 52 px/s speed', async () => {
+test('ranger authored baseline retains its original cadence, parameters and 52 px/s speed', async () => {
   const ranger = await json(patterns[0])
   assert.deepEqual(ranger.actions[0], [{ repeat: { times: 1000000, actionRef: 1 } }])
   assert.deepEqual(ranger.actions[1], [{ wait: 30 }, { fireRef: { ref: 0, params: [-10] } }, { fireRef: { ref: 0, params: [0] } }, { fireRef: { ref: 0, params: [10] } }, { wait: 60 }])
@@ -199,15 +199,10 @@ test('ranger asset matches the current C fixture cadence, parameters and 52 px/s
   for (const item of [ranger.bullets[0], ranger.fires[0]]) {
     assert.equal(item.speed.type, 'absolute'); assert.ok(Math.abs(item.speed.value * 60 - 52) < 1e-12)
   }
-  // Semantic tokens, not whole-source/formatting snapshots.
-  const c = await read('game/patterns.c'), header = await read('game/patterns.h')
+  const header = await read('game/patterns.h')
   assert.match(header, /SIM_PATTERN_HZ\s*=\s*60\b/)
-  assert.match(c, /\.times\s*=\s*NUMBER\(1000000\)/)
-  assert.deepEqual([...c.matchAll(/\.wait\s*=\s*NUMBER\((\d+)\)/g)].map(match => +match[1]), [30, 60])
-  const offsets = c.match(/offsets\[\]\[1\]\s*=\s*\{([^;]+)\}/)
-  assert.ok(offsets)
-  assert.deepEqual([...offsets[1].matchAll(/NUMBER\((-?\d+)\)/g)].map(match => +match[1]), [-10, 0, 10])
-  assert.match(c, /\.source\s*=\s*"\$1"/); assert.match(c, /SPEED\(52\.0\s*\/\s*SIM_PATTERN_HZ\)/)
+  // Runtime timing/angles/speed parity against the original fixture is exercised
+  // by pack.c and the native/WASM game integration, not C-source token snapshots.
 })
 
 test('content contains authored inputs, not generated packs/Odin or game/source trees', async () => {

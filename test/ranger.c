@@ -13,7 +13,7 @@ static sim_state fixture(float px, float py, float x, float y) {
     sim_state s; sim_init(&s);
     s.x=px; s.y=py; s.shot_ticks=s.spawn_ticks=s.hurt_ticks=1000000;
     s.enemies[0]=(sim_enemy){.x=x,.y=y,.hp=4,.active=true,.kind=SIM_RANGER};
-    bm_init(&s.enemies[0].pattern,&sim_ranger_pattern,0);
+    bm_init(&s.enemies[0].pattern,sim_ranger_pattern(),0);
     return s;
 }
 static void timing_and_aim(void) {
@@ -99,7 +99,7 @@ static void spawn_kill_reset(void) {
     sim_state s; sim_init(&s);
     s.ticks=SIM_WAVE_TICKS+149; s.spawn_ticks=1; s.shot_ticks=s.hurt_ticks=1000000;
     tick(&s);
-    assert(s.enemies[0].kind==SIM_RANGER && s.enemies[0].hp==4 && s.enemies[0].pattern.pattern==&sim_ranger_pattern);
+    assert(s.enemies[0].kind==SIM_RANGER && s.enemies[0].hp==4 && s.enemies[0].pattern.pattern==sim_ranger_pattern());
     s=fixture(-80,40,-48,40); s.damage=4;
     s.bullets[0]=(sim_bullet){-48,40,0,0,240,true};
     tick(&s);

@@ -21,7 +21,7 @@ standalone, not embedded in a GAMS View.
 ## Build and run
 
 Prerequisites: Zig (native/web builds tested with 0.17.0), Make, Python 3, curl, and
-Node.js 22+ for tests. First use of missing dependencies requires HTTPS access.
+Node.js 22+ for content builds and tests. First use of missing dependencies requires HTTPS access.
 Native additionally requires macOS with Xcode SDK access and its license accepted
 by you. No npm dependencies, Emscripten, Host or sibling builds.
 
@@ -34,7 +34,7 @@ make run         # build and launch the native window
 make             # build both targets
 make test        # dependency, shader pipeline, native recipe and WASM ABI tests
 make smoke-native # draw three real Metal frames, then exit (macOS GUI session)
-make content     # optional GAMS graph -> respack, after installing its Units
+make content     # optional real GAMS graph -> embedded pack (install Units first)
 make clean       # remove generated output
 ```
 
@@ -102,10 +102,19 @@ make content
 GAMS_HOST_BIN=/Applications/GAMS.app/Contents/MacOS/gams make content
 ```
 
-**This pack is not consumed by the game yet:** `game/patterns.c` remains active.
-The next handoff is pack-to-C-IR loading, not another runtime rewrite. Native/web
-and Pages builds do not require GAMS; ordinary tests validate authoring contracts
-without downloading Units. Published Views/plugins are explicit release URLs in
+**The game consumes this pack now.** Native and browser builds embed the same
+bytes and decode them once into the independent C VM's owned, immutable IR.
+`game/patterns.c` is only the startup/binding adapter, not a duplicate pattern.
+Editing the ranger JSON in GAMS, saving, then rebuilding changes its shots without
+C edits. After Nodegraph Run or `make content`, use `make native web` and restart
+native / Reload the browser; there is no runtime Host or filesystem dependency.
+
+Ordinary builds and Pages use a small Node-only adapter for the registered
+packaging graph/schema when the pack is missing/stale. It matches published GAMS
+bytes and preserves a newer GAMS-generated pack. This is not a general Lua graph
+interpreter: custom transformations/topologies fail explicitly. See the content
+guide for the supported contract and validation commands. Missing/malformed
+source inputs never silently fall back to an old pack. Published Views/plugins are explicit release URLs in
 `gams.json`; GAMS owns their installation/cache. No custom installer is added.
 
 ### Optional GAMS Host download
@@ -170,7 +179,7 @@ Native frames supply Sokol elapsed seconds. Browser `frame(elapsed)` receives
 requestAnimationFrame elapsed seconds; `key(index,down)` uses the eight physical
 bindings in `game/app.h`, and `release_keys()` clears held input. WASD and arrow
 bindings are tracked independently. Simulation state is separate from rendering;
-there is no asset decoder or director in this milestone.
+the BulletML pack decoder is separate from simulation/rendering, and there is no director.
 
 ## Timed run
 
@@ -286,7 +295,8 @@ runtime, with no ECS, Sokol, allocator, game-state or GAMS dependencies. See its
 [API/limits](game/bulletml/README.md) and [provenance](game/bulletml/PROVENANCE.md).
 This ports the demo's semantics, not an XML parser or a full-spec compliance layer.
 
-`game/patterns.c` supplies a hand-authored parameterized aimed fan: repeat an
+`content/bulletml/ranger-fan.bulletml.json` supplies the parameterized aimed fan,
+packaged through the graph/schema and decoded by `game/bulletml/pack.c`: repeat an
 initial 30-frame wait, three fires with `$1` offsets -10/0/+10 degrees, then a
 60-frame rest. The VM runs at 60 Hz; speeds are pixels per VM frame, converted
 to 52 pixels/second in the 120 Hz game. Demo wait semantics add resume calls,
@@ -304,9 +314,9 @@ continue. Boss entry clears ordinary enemies/shots; retry clears VM state.
 **Deliberate adapter limit:** the VM emits child-action/motion events, but this
 first host slice accepts only straight child bullets without actions. Unsupported
 host events assert rather than disappear silently. Boss patterns, child motion
-interpolation, XML/JSON loading, GAMS nodegraphs/respack decoding, balance data
-and the director are separate follow-ups. Future loaders create the independent
-IR; game-specific enemy/wave/damage data stays outside the VM.
+interpolation, runtime XML/JSON parsing, balance data and the director remain
+separate follow-ups. The bounded RSPK decoder creates the independent IR without
+changing the VM. Game-specific enemy/wave/damage data stays outside both.
 
 ## Rendering and verification
 
@@ -314,12 +324,13 @@ IR; game-specific enemy/wave/damage data stays outside the VM.
 shaders and generated C bindings live alongside it. See
 [the renderer contract](game/render/README.md) and
 [import provenance](game/render/PROVENANCE.md). No decoder, director, resource
-pack or complete gameplay systems were imported. The later BulletML VM port is
-recorded separately above; generated decoders/director remain absent. The original triangle shader
+pack or complete gameplay systems were imported with the renderer. The later
+BulletML VM port and newly authored bounded RSPK loader are separate; old
+Odin/generated decoders and the director remain absent. The original triangle shader
 is retained as a shader-generation test fixture, not drawn by the app. Output
 filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
 
-- `make test`: passed (68 checks, including 35 VM invalid-input subtests). Includes standalone C movement/collision
+- `make test`: passed (124 checks with the optional published-GAMS fixture enabled; otherwise 123 pass / one parity check skips). Includes standalone C movement/collision
   assertions (movement, fixed-step timing, collision, spawning, chase paths,
   targeting/line of sight, swept projectile hits, pool saturation, contact damage,
   death/reset, XP drops/attraction, blocked pickups, pool merging, exact collection,
@@ -350,11 +361,22 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   XP, boss entry and reset. Real WASM tests verify spawn initialization, warning,
   paused VM, emitted shots and a real kill-to-blue-gem path. Fifteen authoring
   checks cover Unit sources/routes, renderer config, graph references, pattern
-  JSON parity, compiler shim, cache names and RSPK header/error diagnostics.
+  JSON baseline, compiler shim, cache names and RSPK header/error diagnostics.
+  Decoder tests cover the original 500-tick fan trace, copied string/IR ownership,
+  every command/mode/reference, capacities, every truncated prefix and malformed
+  headers/tags/values. Build tests cover source edits, unchanged/incremental Make,
+  newer GAMS pack preservation and missing-input failures despite stale artifacts.
+  A separate actual native/WASM simulation probe changes spread, delay and speed
+  in isolated JSON copies, proving new shots with unchanged C. Frame counts match
+  exactly; normalized float32 velocities are compared within a few ulps.
 - GAMS authoring lane: the installed 2.0.6 Host CLI and published FS/Lua/respack
   components compiled and executed the graph to a 344-byte, two-pattern pack;
   repeat/fresh-directory outputs matched, and invalid destinations failed.
-  Both JSON assets ran in the released BulletML preview engine. Native GUI
+  Both JSON assets ran in the released BulletML preview engine. The optional
+  `GAMS_INTEGRATION=1 node --test test/packed-game.test.mjs` also generated both
+  baseline and edited packs with the real Host/published components, checked
+  portable byte parity, and consumed those GAMS bytes in native/WASM simulation.
+  Native GUI
   layout, preview editing/save and the Run button await owner verification.
   Real enemy-kill-to-render checks ensure chasers produce purple, runners blue,
   and brutes gold without requiring pool-overflow merges.
@@ -375,7 +397,8 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   assertCardPixelSeams(canvas, wasmExports.frame). Its 21 background samples
   reproduced atlas-edge transparency before the shader fix and pass afterward.
   A staged Chrome run also verified the ranger silhouette, warning, and live
-  three-shot VM fan without console errors. Full human weapon/enemy balance
+  three-shot VM fan without console errors; this was repeated after replacing
+  the C fixture with decoded authored pack data. Full human weapon/enemy balance
   playtesting remains outstanding. Earlier checks verified obstacle
   sliding, outer-wall collision, focus release, sprite flips, opacity and tint.
 - Zig 0.17.0: `make native`, `make smoke-native` and `make test` pass.
@@ -397,10 +420,9 @@ clearance or a release approval.
 
 The prototype WebGL bridge and freestanding allocator have limitations; see
 `CONTEXT.md`. Start here with verified rendering before expanding gameplay.
-GAMS game integration is a later milestone. The minimal `gams.json` and installed
-Units provide Files/Code editing; there is no embedded game View, art pack or
-GAMS Unit release workflow. BulletML authoring/pack generation is configured;
-C resource loading, game balance data and director integration remain separate
+GAMS provides Files/Code, BulletML preview and Nodegraph authoring, but no embedded
+game View, art pack or GAMS Unit release workflow. Authored BulletML packs reach
+both game targets now; balance/wave data and director integration remain separate
 tasks. The standalone Pages deployment branch is `release`; origin is
 `git@github.com:kkgams/example.game3.git`. No hosted repository creation or push
 has been performed by this task.

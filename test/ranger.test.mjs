@@ -13,7 +13,7 @@ test('ranged enemy: pattern timing, aim, movement, LOS, pools, pause, frame part
   t.after(() => rm(folder, {recursive: true, force: true}))
   const executable = path.join(folder, 'ranger-test')
   execFileSync(process.env.ZIG || 'zig', [
-    'cc', 'test/ranger.c', 'game/sim.c', 'game/patterns.c', 'game/bulletml/bulletml.c', '-Igame',
+    'cc', 'test/ranger.c', 'game/sim.c', 'game/patterns.c', 'game/bulletml/bulletml.c', 'game/bulletml/pack.c', '-Igame', '-Ibuild.nosync/content',
     '-std=c11', '-Wall', '-Wextra', '-Werror', '-o', executable,
   ], {cwd: root, encoding: 'utf8'})
   execFileSync(executable, [], {cwd: folder, encoding: 'utf8'})

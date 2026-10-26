@@ -24,3 +24,12 @@ removed. This inventory does not establish new source/redistribution clearance.
 Published Project Unit URLs are configured in root `gams.json`; their distributed
 LICENSE/NOTICE metadata remains with Host-installed packages. Neither sibling
 repositories nor original `SOURCE.json` historical hashes were changed.
+
+The later `content/gams/pack.mjs`, `embed.mjs`, `game/bulletml/pack.{h,c}` and game
+startup adapter are newly authored integration code. Wire facts were checked
+against the existing schema, read-only `plugin.respack/src/encode.odin` and actual
+published v0.2.0 component output through GAMS 2.0.6. Portable/GAMS baseline and
+edited-pattern bytes matched. No Odin/generated decoder or sibling implementation
+was copied. The old game3 C ranger fixture survives only as a test oracle for
+500-tick parity, not as production data. Historical input hash entries above and
+`SOURCE.json` remain unchanged.

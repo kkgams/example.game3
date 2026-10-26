@@ -3,9 +3,10 @@
 
 #include "bulletml/bulletml.h"
 
-// Hand-authored fixture IR. Future GAMS/respack decoding replaces this data,
-// not the independent VM or its host interface.
+// Authored RSPK bytes are embedded at build time and decoded once into owned IR.
+// Initialize before spawning actors; returned patterns live for the instance.
 enum { SIM_PATTERN_HZ = 60, SIM_PATTERN_SUBSTEPS = 2 };
-extern const bm_pattern sim_ranger_pattern;
+void sim_patterns_init(void);
+const bm_pattern *sim_ranger_pattern(void);
 
 #endif

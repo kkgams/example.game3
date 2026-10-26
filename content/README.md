@@ -1,121 +1,118 @@
 # Authored content and GAMS tooling
 
-`content/` is the canonical Project-owned authoring tree. Pattern assets and the
-scripts that build them are separated so gameplay data is not mixed with UI Units.
-No sibling source, Host widgets or released View code is vendored into this tree.
+`content/` is the canonical Project-owned authoring tree. The name is conventional,
+not a Host requirement. Paths are Project-root-relative.
 
 ```text
-content/
-  bulletml/                 JSON BulletML source assets
-    ranger-fan.bulletml.json current ranger fixture, expressed as JSON
-    aim.bulletml.json        small demo-derived aimed-shot example
-  gams/
-    graphs/bulletml.ng.json  editable JSON -> slots -> respack pipeline
-    nodes/                  Project-owned Lua node scripts
-    schema/bulletml.rspk.json resource-pack schema
-    compile-graph.lua        imported Project graph compiler
-    build.mjs               optional native GAMS CLI launcher
-ng/compile-graph.lua         compatibility forwarder, not another compiler copy
-build.nosync/content/        generated packs/Lua; ignored, never authored here
+content/bulletml/             canonical JSON pattern assets
+content/gams/graphs/          editable packaging graph
+content/gams/nodes/           Project-owned Lua node scripts
+content/gams/schema/          BulletML RSPK wire schema
+content/gams/compile-graph.lua imported Project graph compiler
+content/gams/build.mjs        optional real GAMS CLI launcher
+content/gams/pack.mjs         portable packaging adapter for ordinary builds/CI
+content/gams/embed.mjs        generated C byte-array header writer
+ng/compile-graph.lua          released View's required compatibility forwarder
+build.nosync/content/         generated pack/header/Lua, never canonical or tracked
 ```
 
-The `content` name is conventional, not a GAMS requirement. Configured paths are
-Project-root-relative. Renaming it requires updating `gams.json`, graph paths,
-node scripts, the compiler forwarder and CLI launcher together.
+No Host widgets, released View source, sibling source tree or generated Odin
+code is vendored here. See [provenance](PROVENANCE.md).
 
-## Open in GAMS
+## Author and play
 
-Reopen this Project in GAMS, rather than merely reloading an already-open View.
-The Host must reread the updated `gams.json` to install/register the added Units.
-The initial three-pane layout is Content Files, BulletML preview and Nodegraph.
-A terminal launch with the existing installed Host is:
+Reopen this Project in GAMS to register its configured published Units. Reloading
+only an old View does not reread `gams.json`. The three-pane layout opens Content
+Files, BulletML preview and Nodegraph. Existing installed Host launch:
 
 ```sh
 GAMS_APP_CWD="$PWD" tools/gams.app/Contents/MacOS/gams
 ```
 
-`gams.json` retains the existing theme, shell services and Files/Code Units,
-adding only published release sources:
+The config retains the existing theme/services/Files/Code Units and adds Lua and
+respack v0.2.0, BulletML View v0.2.0 and Nodegraph/internal-node editor v0.1.0.
+GAMS owns installation/cache. New cache files are ignored; historical already
+tracked cache files remain untouched, not canonical editable source.
 
-- `plugin.lua` and `plugin.respack`: v0.2.0 direct WASM.
-- `view.bullet`: v0.2.0 ZIP.
-- `view.ng` and its internal `view.ng-node`: v0.1.0 ZIP, the published versions
-  available when this setup was prepared. Unpublished sibling candidates are
-  not silently substituted.
+1. Edit `bulletml/ranger-fan.bulletml.json` using BulletML's Edit action, save,
+   reload/reset its preview. The preview is JS, not the game's C VM; use the
+   supported C expression/host subset below.
+2. Run `gams/graphs/bulletml.ng.json` in Nodegraph, or `make content` using the
+   installed Host and cached Units. This writes `build.nosync/content/bulletml.rspk`.
+3. Run `make native web`; restart native or Reload the browser. Both now consume
+   the authored pack, without C edits. Saving JSON and rebuilding also works
+   without explicitly running GAMS's pack step.
 
-GAMS installs missing Units through its normal `gams_modules` cache and preserves
-their notices. No new installer, Unit source copy or automatic dependency upgrade
-is added. New cache contents are ignored. Some older cache files were already
-tracked by an earlier checkpoint; they remain untouched, not canonical sources.
+The baseline fan has offsets -10/0/+10, waits 30/60, and speed 52/60 pixels per
+60 Hz VM frame. The smaller aim example is packed second; ranger must appear
+exactly once at index zero. Filename routing sends these two asset basenames to
+BulletML and `bulletml.ng.json` to Nodegraph; other JSON opens in Code. Files
+matches basename/final extension, not compound-extension globs. New pattern names
+can use BulletML's Open dialog or an explicit basename route.
 
-### Pattern preview/editing
+## Packaging and runtime boundary
 
-The default asset is `content/bulletml/ranger-fan.bulletml.json`. Use the BulletML
-View's Edit action for JSON editing, then save/reload/reset the preview. The JSON
-matches the existing C ranger fixture: three aim offsets -10/0/+10, wait 30 then
-60, speed 52/60 pixels per 60 Hz frame. `aim.bulletml.json` is the smaller example.
-The preview is the released View's JS engine, not the game's C VM; their coverage
-and supported commands are not assumed identical.
+The five-node graph packages explicit ordered source paths -> raw slots JSON ->
+respack. It is not yet a palette of BulletML command-generating nodes. Its Lua
+scripts preserve raw JSON, validate required inputs/output paths and propagate
+errors. `ng/compile-graph.lua` forwards to the single content-owned compiler
+because the released View hard-codes that entry path.
 
-Files routes these two basenames to BulletML and `bulletml.ng.json` to Nodegraph;
-other JSON opens in Code. The current Files Unit matches basename or final
-extension, not compound-extension globs. For a newly named pattern, use BulletML's
-Open dialog or add an explicit basename route. Do not invent a `.bulletml.json`
-route that that Unit does not support.
+Ordinary Make builds/Pages do not require GAMS. The Node-only adapter encodes the
+same schema/ordered assets into identical RSPK bytes when missing/stale. It is
+strictly this registered packaging contract, not a Lua interpreter. Unsupported
+topology, customized node scripts, output paths or reordered ranger binding fail
+rather than silently interpreting only part of a custom graph. Script hashes
+are local semantic-compatibility guards, not dependency locks/download integrity
+checks. Changing node semantics requires updating/testing the portable adapter.
+Value-port labels/coordinates are cosmetic, including empty labels saved by GAMS.
 
-### Nodegraph pipeline
+Make preserves a newer GAMS-built pack, incrementally regenerates its byte-array
+header and recompiles both targets. Input validation also runs on no-op builds:
+missing/malformed required JSON must not disappear from wildcard dependencies
+and leave an apparently successful stale build. Pack/header/cache are ignored
+build output; no binary is checked in or fetched from a sibling checkout.
 
-Open `content/gams/graphs/bulletml.ng.json` and press Run in Nodegraph. It packs
-both patterns in a deterministic, explicit order (ranger first). The value nodes
-hold source/schema/output paths; the two registered code-node presets assemble
-raw slots JSON and build the pack. This graph is a **packaging pipeline**, not
-yet a palette of BulletML command-generating nodes.
+`game/bulletml/pack.c` decodes into bounded, owned stationary arrays and copied
+NUL-terminated strings. `game/patterns.c` initializes that content once and binds
+the ranger; it no longer duplicates the pattern. The independent VM is unchanged.
+The frozen wire contract is RSPK v1, one contiguous slot, a vector of documents;
+little-endian u32 counts/enums, one-based u16 oneof tags, f64 numbers, u32-length
+UTF-8 strings and u8 booleans. Field/variant order is part of the ABI. Changing
+that schema requires decoder and compatibility-test review, not just regeneration.
+Odin metadata in the imported schema is unused; no old decoder was imported.
 
-Output is `build.nosync/content/bulletml.rspk`: RSPK v1, one slot containing a
-vector of BulletML documents. The builder creates missing output directories,
-rejects paths outside ignored build output, propagates errors, and preserves raw
-pattern JSON through slot assembly. It generates **no Odin or C decoder**. The
-imported schema retains its original Odin metadata, unused by this build.
+The game currently supports straight child shots and repeat/action/fire/wait
+commands only. Startup rejects unsupported ranger world commands/child actions;
+the separate decoder/VM support the broader schema for later hosts. Expressions
+use the existing VM grammar/guards, not arbitrary JS/Lua evaluation. Orientation
+is checked metadata, not a new VM feature. Rebuild/restart replaces content;
+there is no runtime pack hot reload or GAMS/Node/filesystem requirement.
+Balance/wave data, boss migration and the director remain separate work.
 
-The released Nodegraph View hard-codes `ng/compile-graph.lua`; the tiny root
-forwarder loads `content/gams/compile-graph.lua` into the same Lua environment.
-This avoids modifying or copying the View/Host just to relocate Project scripts.
-See [provenance](PROVENANCE.md) for the compiler/schema/example origin.
-
-## Optional CLI build
-
-After opening the Project once so its configured WASM Units are installed:
+## Verification
 
 ```sh
-make content
-# Or use another installed Host / shared module cache:
+make test                 # ordinary suite, no installed Host required
+make native
+make smoke-native
+make content              # optional actual GAMS compilation, then header embedding
 GAMS_HOST_BIN=/Applications/GAMS.app/Contents/MacOS/gams make content
-GAMS_MODULES_DIR=/absolute/path/to/gams_modules make content
+GAMS_MODULES_DIR=/absolute/cache make content
+GAMS_INTEGRATION=1 node --test test/packed-game.test.mjs
+GAMS_PACK_FIXTURE=/absolute/independent-gams.rspk node --test test/pack-build.test.mjs
 ```
 
-The launcher reads the same graph, invokes the same compiler forwarder through
-`lua/lua::run`, runs its generated program, and verifies the resulting RSPK header,
-slot bounds and non-empty pattern vector. Generated Lua and Wasmtime cache stay
-under `build.nosync/`. It resolves configured direct-file component URLs to their
-documented Host cache names; it does not download Units or use a sibling checkout.
-A missing Host/component fails with setup instructions.
+Verified with installed GAMS 2.0.6 and published FS/Lua/respack components:
+344-byte/two-pattern baseline; exact portable parity; isolated changed spread,
+delay and speed -> real GAMS packs -> both actual native/WASM simulations without
+C changes. Native/WASM clock/counts match exactly; existing float32 velocity
+normalization differs by at most a few ulps, not gameplay-scale differences.
+Decoder checks include original 500-tick trace parity, every command, ownership,
+capacity/reference/tag/value failures and every truncated prefix. Make tests
+cover incremental edits, newer-pack preservation and stale-output failure guards.
+Chrome/WebGL2 showed the decoded ranger warning and live fan without errors.
 
-## Current boundary and verification
-
-**The game still uses `game/patterns.c`.** Editing JSON or building this pack does
-not change gameplay yet. Next slice: decode this authored pack into the independent
-C VM's immutable IR and replace the C fixture for both native and web. A C loader,
-Pages content build, enemy balance/wave data and director integration are not part
-of this authoring setup. Ordinary `make test`, native/web builds and Pages remain
-independent from an installed GAMS Host.
-
-Validation performed with the installed GAMS 2.0.6 Host CLI and published FS,
-Lua/respack components: compiler-forwarder -> generated Lua -> two-pattern pack
-(344 bytes), including repeat builds. Both source assets also ran for 180 frames
-in the released BulletML View engine (six fan shots / two aimed shots).
-The published Views' absolute imports were also checked against the v2.0.6
-Host source tree. Node tests cover config/data/graph/cache/header contracts
-without network/GAMS.
-The native three-pane GUI layout, interactive preview editing/save and Nodegraph
-Run button still need owner verification after reopening the Project; CLI success
-is not a blanket GUI claim.
+The native three-pane GAMS GUI layout/edit/save/Run interactions still need owner
+verification; CLI/preview-engine evidence is not a blanket GUI claim. Actual
+hosted Pages execution/publication and human balance playtesting remain unverified.

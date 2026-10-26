@@ -30,11 +30,16 @@ SHADER_HEADERS := $(addsuffix .h,$(SHADER_SOURCES))
 SHADER_DEPS_DIR := $(BUILD)/shader-deps
 SHADER_DEPFILES := $(addprefix $(SHADER_DEPS_DIR)/,$(addsuffix .d,$(SHADER_SOURCES)))
 SHADERS_MISSING_DEPS := $(patsubst $(SHADER_DEPS_DIR)/%.d,%.h,$(filter-out $(wildcard $(SHADER_DEPFILES)),$(SHADER_DEPFILES)))
-GAME_SOURCES := game/main.c game/sim.c game/patterns.c game/bulletml/bulletml.c game/render/render2d.c
-COMMON := $(GAME_SOURCES) game/app.h game/sim.h game/patterns.h game/bulletml/bulletml.h game/font.h game/render/render2d.h $(SHADER_HEADERS) $(SOKOL_HEADERS)
+GAME_LOGIC_SOURCES := game/sim.c game/patterns.c game/bulletml/bulletml.c game/bulletml/pack.c
+GAME_SOURCES := game/main.c $(GAME_LOGIC_SOURCES) game/render/render2d.c
+CONTENT_PACK := $(BUILD)/content/bulletml.rspk
+CONTENT_HEADER := $(BUILD)/content/bulletml-pack.h
+CONTENT_INPUTS := $(wildcard content/bulletml/*.bulletml.json) content/gams/graphs/bulletml.ng.json $(wildcard content/gams/schema/*.rspk.json)
+CONTENT_SCRIPTS := content/gams/pack.mjs content/gams/nodes/bulletml-slots-json.lua content/gams/nodes/build-bulletml-respack.lua
+COMMON := $(GAME_SOURCES) game/app.h game/sim.h game/patterns.h game/bulletml/bulletml.h game/bulletml/pack.h game/font.h game/render/render2d.h $(CONTENT_HEADER) $(SHADER_HEADERS) $(SOKOL_HEADERS)
 WEB_HEADERS := $(shell find game/web/wasm-include -type f)
 
-.PHONY: all deps sokol sokol-shdc native web run play serve test smoke-native clean shaders content
+.PHONY: all deps sokol sokol-shdc native web run play serve test smoke-native clean shaders content content-inputs
 all: native web
 deps: sokol sokol-shdc
 sokol: $(SOKOL_HEADERS)
@@ -92,20 +97,33 @@ $(BUILD)/triangle: Makefile $(COMMON) game/osx/main.c game/osx/sokol_impl.m
 	@mkdir -p $(BUILD)
 	@SDK=$$(xcrun --sdk macosx --show-sdk-path) && \
 	$(ZIG) build-exe -cflags -Werror=strict-prototypes -- \
-		game/osx/sokol_impl.m game/osx/main.c $(GAME_SOURCES) \
+		game/osx/sokol_impl.m game/osx/main.c $(GAME_SOURCES) -I$(BUILD)/content \
 		-lc -O ReleaseSafe --sysroot "$$SDK" -F/System/Library/Frameworks \
 		-framework Metal -framework MetalKit -framework Cocoa \
 		-framework QuartzCore -framework Foundation -femit-bin=$@
 
 $(BUILD)/web/triangle.wasm: Makefile $(COMMON) game/web/main.c $(WEB_HEADERS)
 	@mkdir -p $(BUILD)/web
-	$(ZIG) build-exe game/web/main.c $(GAME_SOURCES) -target wasm32-freestanding \
+	$(ZIG) build-exe game/web/main.c $(GAME_SOURCES) -I$(BUILD)/content -target wasm32-freestanding \
 		-fno-entry -rdynamic -O ReleaseSafe -I game/web/wasm-include -femit-bin=$@
+
+# Both targets embed the exact same resource bytes. The portable adapter follows
+# the registered packaging graph/schema; GAMS can generate this same artifact.
+$(CONTENT_PACK): $(CONTENT_INPUTS) $(CONTENT_SCRIPTS)
+	node content/gams/pack.mjs
+
+# Validate referenced inputs even on no-op builds: removing a required JSON file
+# must not disappear from wildcard prerequisites and silently reuse stale bytes.
+content-inputs:
+	node content/gams/pack.mjs --check
+
+$(CONTENT_HEADER): $(CONTENT_PACK) content/gams/embed.mjs content/gams/graphs/bulletml.ng.json | content-inputs
+	node content/gams/embed.mjs "$(CONTENT_PACK)" "$@"
 
 # Test-only app staging hooks are compiled into a separate WASM, never the game.
 $(BUILD)/test/scene.wasm: Makefile $(COMMON) game/web/main.c test/scene.c $(WEB_HEADERS)
 	@mkdir -p $(BUILD)/test
-	$(ZIG) build-exe game/web/main.c test/scene.c game/sim.c game/patterns.c game/bulletml/bulletml.c game/render/render2d.c -target wasm32-freestanding \
+	$(ZIG) build-exe game/web/main.c test/scene.c $(GAME_LOGIC_SOURCES) game/render/render2d.c -I$(BUILD)/content -target wasm32-freestanding \
 		-fno-entry -rdynamic -O ReleaseSafe -I game/web/wasm-include -femit-bin=$@
 
 $(BUILD)/web/%: game/web/%
@@ -121,10 +139,11 @@ smoke-native: native
 play serve: web
 	$(PYTHON) -m http.server $(PORT) --bind 127.0.0.1 --directory $(BUILD)/web
 
-# Optional authoring lane: open the Project in GAMS first to install its Units.
-# Produces a pack only; game builds still use the C pattern fixture.
+# Optional real GAMS authoring lane: install Units by opening the Project first.
+# The newer GAMS pack is preserved and embedded, not overwritten by a fallback.
 content:
 	GAMS_HOST_BIN="$(GAMS_HOST_BIN)" node content/gams/build.mjs
+	$(MAKE) $(CONTENT_HEADER)
 
 test: web $(BUILD)/test/scene.wasm
 	node --test test/*.test.mjs

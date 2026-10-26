@@ -19,6 +19,7 @@ bool sim_solid(int x, int y) {
 
 void sim_init(sim_state *state) {
     assert(state);
+    sim_patterns_init();
     *state = (sim_state){ .x = -80.0f, .y = 0.0f, .accumulator = 0.0,
         .hp = SIM_MAX_HP, .spawn_ticks = SIM_FIRST_SPAWN_TICKS,
         .level = 1, .xp_next = 3, .damage = 1,
@@ -197,7 +198,7 @@ static bool spawn(sim_state *state, sim_enemy_kind kind) {
                 .x = px, .y = py, .hp = health[kind], .active = true,
                 .kind = kind, .attack_ticks = kind == SIM_BOSS ? 240 : 0,
             };
-            if (kind == SIM_RANGER) bm_init(&state->enemies[slot].pattern, &sim_ranger_pattern, 0);
+            if (kind == SIM_RANGER) bm_init(&state->enemies[slot].pattern, sim_ranger_pattern(), 0);
             return true;
         }
     }
@@ -529,7 +530,7 @@ static void ranger_attacks(sim_state *state) {
     for (int i = 0; i < SIM_MAX_ENEMIES; ++i) {
         sim_enemy *enemy = &state->enemies[i];
         if (!enemy->active || enemy->kind != SIM_RANGER) continue;
-        assert(enemy->pattern.pattern == &sim_ranger_pattern);
+        assert(enemy->pattern.pattern == sim_ranger_pattern());
         float dx = state->x - enemy->x, dy = state->y - enemy->y;
         if (dx*dx + dy*dy > 96*96 || wall_hit(enemy->x,enemy->y,dx,dy,SIM_BULLET_HALF) <= 1) {
             bm_restart(&enemy->pattern, 0); // Reacquisition always gets a full tell.
