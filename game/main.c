@@ -6,7 +6,7 @@
 
 sg_swapchain get_sokol_swapchain(void);
 
-// Procedural assets and hard-coded spawns; decoder/director remain deferred.
+// Procedural graphics over an independent authored collision layer.
 static struct {
     r2_renderer renderer;
     sg_image atlas, lut;
@@ -113,11 +113,14 @@ void init(void) {
             }
         }
     }
-    uint8_t lut[SIM_WIDTH * (SIM_HEIGHT + 1) * 4] = {0};
-    for (int y = 0; y <= SIM_HEIGHT; ++y) {
-        for (int x = 0; x < SIM_WIDTH; ++x) {
-            int p = (y * SIM_WIDTH + x) * 4;
-            lut[p] = y == 0 ? 1 : sim_tile(x, y - 1);
+    const sim_map *map = state.simulation.map;
+    uint8_t lut[SIM_MAP_MAX_WIDTH * (SIM_MAP_MAX_HEIGHT + 1) * 4] = {0};
+    for (int y = 0; y <= map->height; ++y) {
+        for (int x = 0; x < map->width; ++x) {
+            int p = (y * map->width + x) * 4;
+            // Temporary graphics policy, not collision values or gameplay IDs.
+            lut[p] = y == 0 ? 1 : sim_map_solid(map, x, y - 1) ? 4 :
+                (uint8_t)(1 + ((x + y - 1) & 1));
             lut[p+3] = 255;
         }
     }
@@ -126,8 +129,9 @@ void init(void) {
         .data.mip_levels[0] = SG_RANGE(atlas), .label = "fixture-atlas",
     });
     state.lut = sg_make_image(&(sg_image_desc){
-        .width = SIM_WIDTH, .height = SIM_HEIGHT + 1, .pixel_format = SG_PIXELFORMAT_RGBA8,
-        .data.mip_levels[0] = SG_RANGE(lut), .label = "fixture-tile-lut",
+        .width = map->width, .height = map->height + 1, .pixel_format = SG_PIXELFORMAT_RGBA8,
+        .data.mip_levels[0] = {.ptr = lut, .size = (size_t)map->width * (map->height + 1) * 4},
+        .label = "collision-debug-tile-lut",
     });
     r2_init(&state.renderer, state.atlas, state.lut);
 }
@@ -285,18 +289,21 @@ void frame(double elapsed) {
     if (!was_choosing && state.simulation.choosing)
         for (int i = 0; i < GAME_KEY_COUNT; ++i) state.keys[i] = false;
     if (input.x && !state.simulation.dead && !state.simulation.won && !state.simulation.choosing) state.face_left = input.x < 0;
-    r2_camera camera = r2_camera_make(0, 0, (float)swapchain.width,
-                                     (float)swapchain.height,
-                                     viewport_zoom(swapchain.width, swapchain.height));
+    const sim_state *s = &state.simulation;
+    const sim_map *map = s->map;
+    float zoom = viewport_zoom(swapchain.width, swapchain.height), camera_x, camera_y;
+    sim_map_camera(map, s->x, s->y, swapchain.width * zoom, swapchain.height * zoom,
+                   &camera_x, &camera_y);
+    r2_camera camera = r2_camera_make(camera_x, camera_y, (float)swapchain.width,
+                                     (float)swapchain.height, zoom);
     r2_tilemap maps[] = {
         {.tile_size = {16,16}, .tileset_uv = {0,0,.25f,.5f},
-         .lut_uv = {0,0,1.0f/SIM_WIDTH,1.0f/(SIM_HEIGHT + 1)},
+         .lut_uv = {0,0,1.0f/map->width,1.0f/(map->height + 1)},
          .parallax = {1,1}, .repeat = {1,1}},
-        {.pos = {SIM_ORIGIN_X,SIM_ORIGIN_Y},
-         .tile_size = {SIM_TILE_SIZE,SIM_TILE_SIZE}, .tileset_uv = {0,0,.25f,.5f},
-         .lut_uv = {0,1.0f/(SIM_HEIGHT + 1),1,1}},
+        {.pos = {map->origin_x,map->origin_y},
+         .tile_size = {map->tile_size,map->tile_size}, .tileset_uv = {0,0,.25f,.5f},
+         .lut_uv = {0,1.0f/(map->height + 1),1,1}},
     };
-    const sim_state *s = &state.simulation;
     r2_sprite sprites[SPRITE_CAPACITY] = {0};
     int count = 0;
     // Player stays first in the upload for integration checks.
@@ -373,6 +380,7 @@ void frame(double elapsed) {
             .uv = {.875f,.75f,1,1}, .color_add = {1,.3f,.65f,1},
         };
     }
+    const int world_count = count;
     add_text(sprites, &count, "TIME", -52, 96);
     unsigned remaining = s->ticks < SIM_BOSS_TICKS ? (SIM_BOSS_TICKS - s->ticks + 119) / 120 : 0;
     add_number(sprites, &count, remaining, -12, 96);
@@ -426,6 +434,12 @@ void frame(double elapsed) {
         add_text(sprites, &count, "WAVE", -132, -100);
         add_number(sprites, &count, (unsigned)sim_wave(s), -92, -100);
         add_text(sprites, &count, s->blade_count ? "SHOT AND BLADES" : "AUTO FIRE", s->blade_count ? -52 : -32, -100);
+    }
+    // UI uses screen-centered logical coordinates. Translate only UI vertices
+    // to cancel the world camera, retaining one stream-buffer update per frame.
+    for (int i = world_count; i < count; ++i) {
+        sprites[i].pos[0] += camera_x;
+        sprites[i].pos[1] += camera_y;
     }
     sg_begin_pass(&(sg_pass){
         .action = {.colors[0] = {.load_action = SG_LOADACTION_CLEAR,

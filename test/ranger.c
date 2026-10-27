@@ -1,4 +1,4 @@
-#include "sim.h"
+#include "arena.h"
 #include "patterns.h"
 #include <assert.h>
 #include <string.h>

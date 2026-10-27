@@ -4,12 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "bulletml/bulletml.h"
+#include "map.h"
 
-#define SIM_WIDTH 16
-#define SIM_HEIGHT 10
-#define SIM_TILE_SIZE 16
-#define SIM_ORIGIN_X (-128.0f)
-#define SIM_ORIGIN_Y (-80.0f)
 #define SIM_PLAYER_HALF 5.0f
 #define SIM_SPEED 64.0f
 #define SIM_STEP (1.0/120.0)
@@ -62,6 +58,7 @@ typedef struct {
     bool active;
 } sim_bullet;
 typedef struct {
+    const sim_map *map;
     float x, y;
     double accumulator;
     int hp, kills;
@@ -80,9 +77,8 @@ typedef struct {
 } sim_state;
 typedef struct { int x, y; } sim_input;
 
-/* Tile (0, 0) is bottom-left; world coordinates are Y-up. Outside is solid. */
-bool sim_solid(int x, int y);
-uint8_t sim_tile(int x, int y);
+/* Map storage must remain immutable and alive for the entire run. */
+void sim_init_map(sim_state *state, const sim_map *map);
 void sim_init(sim_state *state);
 /* Waves 1..3 last 30 seconds each; 4 denotes the final boss duel. Clock ticks
    advance only during active play (never choices, death or victory). */

@@ -2,7 +2,7 @@
 
 Started from the owner's gams3/plugins/game C/Sokol triangle, adapted into an
 independent experiment with native macOS/Metal and browser WASM/WebGL2 targets.
-Current milestone: a first survivor combat loop in a fixed tilemap arena, using
+Current milestone: a survivor combat loop on an authored scrolling tilemap, using
 shared tilemap/sprite pipelines and procedural textures. Movement, tile collision,
 four ordinary enemy archetypes, automatic aimed shots, contact damage, XP gems,
 health/kills/level/XP/timer HUD, paused level-up choices, a three-wave 90-second
@@ -26,6 +26,21 @@ Ownership:
   0.2.0 and Nodegraph/internal-node editor 0.1.0. No unpublished sibling Unit
   source is substituted. Exact known filenames route to BulletML/Nodegraph;
   current Files matches basename/final extension, not compound-extension globs.
+- content/maps/: authored binary collision maps, independent from graphic IDs.
+  world.tilemap.json is the playable 32x24 map; arena.tilemap.json preserves the
+  old 16x10 combat fixture. JSON top-to-bottom rows become Y-up C rows once.
+  build.mjs validates strict version-1 fields, dimensions 8..64, tileSize 16,
+  finite bounded world coordinates, binary cells, sealed/connected free space,
+  at least eight free inner-perimeter spawn cells and full 10x10 spawn clearance.
+  Both targets embed the same generated world-map.h; Make checks required inputs
+  even when a newer header exists. Unchanged header bytes are not rewritten.
+  No new RSPK schema, runtime JSON parser, GAMS graph or map editor is implied.
+  Graphics/placed objects remain separate future layers, never meanings for 0/1.
+- game/map.{h,c}: immutable borrowed map descriptor/validation, out-of-bounds solid,
+  clamped follow camera using actual visible world dimensions (viewport * renderer
+  zoom), centering smaller maps. Required storage stays alive/stationary while
+  sim_state.map borrows it. sim_init_map supports independent maps; sim_init
+  binds the generated default. There is no runtime map hot swap in the app.
 - content/: canonical authored pattern JSON plus content/gams graph, Lua nodes,
   schema, compiler and optional CLI launcher. Root ng/compile-graph.lua is the
   compatibility entry hard-coded by the released View, forwarding to the single
@@ -49,7 +64,10 @@ Ownership:
   no C edits (GAMS_INTEGRATION=1 test/packed-game.test.mjs). Three-pane
   GUI/edit-save/Run still need owner smoke; CLI evidence is not GUI evidence.
 - game/main.c: procedural textures, shared keyboard state and simulation/render
-  integration; rendered tiles come from the collision map source. Reward UI uses
+  integration; debug wall/floor graphics derive from collision but do not define
+  collision values. Camera follows/clamps over the larger map. HUD/reward sprites
+  cancel camera translation while keeping one stream update (Sokol does not allow
+  updating that buffer twice per frame); screen-space pointer mapping is unchanged. Reward UI uses
   four 2x2 cards before blade unlock, then six 3x2 cards. Bordered cards share
   layout/hitboxes, assert label widths and fit the minimum 320x240 viewport.
   app_choose_reward accepts normalized canvas/window coordinates, converts via
@@ -77,7 +95,9 @@ Ownership:
 - game/sim.{h,c}: platform-independent 120 Hz movement and swept tile collision;
   normalized diagonal movement, 64 pixels/second, 0.25-second frame-time cap.
   Also owns bounded enemy/projectile pools, deterministic perimeter spawns,
-  BFS chase routing, nearest-visible auto-fire, swept projectile hits, damage
+  map-dimension BFS chase routing with bounded 64x64 workspace, candidate-cell
+  swept collision/LOS rather than scanning the whole larger map, nearest-visible
+  auto-fire, swept projectile hits, damage
   cooldowns, kills, XP drops/collection, level-up freeze and frozen death state.
   The 64-slot gem pool merges overflow value into an existing gem. Initial XP
   threshold is 3, rising by 2 per level; surplus XP queues distinct choices.
@@ -146,7 +166,10 @@ Ownership:
   Only four production files are uploaded; Pages tests check the file set and
   repository-subpath links. Actual hosted execution/publication awaits a push.
 - Makefile and test/: independent build and WASM/JS ABI verification, including
-  timed-run and orbiting-blade regression tests. test/scene.c includes the real app in a separate
+  timed-run and orbiting-blade regression tests. Existing combat/scene regressions
+  use test/arena.h plus the generated authored arena, not duplicated C map data;
+  new native/WASM map and JSON-edit probes cover the larger production map.
+  test/scene.c includes the real app in a separate
   test-only WASM for staged wave/boss/victory render checks; the production
   binary has no test-stage exports. Generated fixtures stay in build.nosync/.
 - SOURCE.json: original source locations/revision and pre-adaptation hashes.
@@ -154,7 +177,7 @@ Ownership:
   for version control. No manual edits; generated with -f sokol for WebGL2/Metal.
 - tools/: ignored downloaded compiler and optional GAMS Host at gams.app;
   not build output.
-- build.nosync/: generated binaries, embedded content pack/header under content/,
+- build.nosync/: generated binaries, embedded content pack/map headers under content/,
   standalone web output and shader-include depfiles under shader-deps/. Only the
   existing four web production files deploy; content bytes are inside the WASM.
 

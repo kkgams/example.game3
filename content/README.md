@@ -4,6 +4,7 @@
 not a Host requirement. Paths are Project-root-relative.
 
 ```text
+content/maps/                 authored 0/1 collision maps and portable builder
 content/bulletml/             canonical JSON pattern assets
 content/gams/graphs/          editable packaging graph
 content/gams/nodes/           Project-owned Lua node scripts
@@ -15,6 +16,11 @@ content/gams/embed.mjs        generated C byte-array header writer
 ng/compile-graph.lua          released View's required compatibility forwarder
 build.nosync/content/         generated pack/header/Lua, never canonical or tracked
 ```
+
+The game also consumes [authored tilemaps](maps/README.md): the 32x24 collision
+world and clamped follow camera are independent of BulletML. Maps currently open
+in Code, not a new visual map editor. Future graphics and placed objects remain
+separate from collision 0/1.
 
 No Host widgets, released View source, sibling source tree or generated Odin
 code is vendored here. See [provenance](PROVENANCE.md).

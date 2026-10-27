@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#error "simulation requires assertions enabled"
+#endif
 #include "sim.h"
 #include "patterns.h"
 
@@ -5,22 +8,13 @@
 #include <float.h>
 #include <limits.h>
 
-uint8_t sim_tile(int x, int y) {
-    if (x <= 0 || y <= 0 || x >= SIM_WIDTH - 1 || y >= SIM_HEIGHT - 1 ||
-        (x >= 7 && x <= 8 && y >= 4 && y <= 5)) {
-        return 4;
-    }
-    return (uint8_t)(1 + ((x + y) & 1));
-}
+void sim_init(sim_state *state) { sim_init_map(state, sim_default_map()); }
 
-bool sim_solid(int x, int y) {
-    return sim_tile(x, y) == 4;
-}
-
-void sim_init(sim_state *state) {
+void sim_init_map(sim_state *state, const sim_map *map) {
     assert(state);
+    sim_map_validate(map);
     sim_patterns_init();
-    *state = (sim_state){ .x = -80.0f, .y = 0.0f, .accumulator = 0.0,
+    *state = (sim_state){ .map = map, .x = map->spawn_x, .y = map->spawn_y,
         .hp = SIM_MAX_HP, .spawn_ticks = SIM_FIRST_SPAWN_TICKS,
         .level = 1, .xp_next = 3, .damage = 1,
         .shot_interval = SIM_SHOT_TICKS, .move_speed = SIM_SPEED };
@@ -84,52 +78,74 @@ bool sim_choose_upgrade(sim_state *state, int option) {
     return true;
 }
 
-/* Sweep the leading face against authored solid tiles. X then Y gives wall
-   sliding with a stable corner tie-break; touching faces are not overlapping.
-   Sweeps prevent tunneling rather than depending on endpoint overlap alone. */
-static void move_x(float *px, float py, float half, float distance) {
+/* Floor before clamping; truncation would misclassify negative world offsets.
+   Saturating outside coordinates also keeps casts bounded for distant shots. */
+static int tile_coord(float world, float origin, float size, int count) {
+    float cell = (world - origin) / size;
+    if (cell < 0) return -1;
+    if (cell >= count) return count;
+    return (int)cell;
+}
+static int tile_x(const sim_map *map, float x) { return tile_coord(x, map->origin_x, map->tile_size, map->width); }
+static int tile_y(const sim_map *map, float y) { return tile_coord(y, map->origin_y, map->tile_size, map->height); }
+static float center_x(const sim_map *map, int x) { return map->origin_x + (x + .5f) * map->tile_size; }
+static float center_y(const sim_map *map, int y) { return map->origin_y + (y + .5f) * map->tile_size; }
+static float absf(float x) { return x < 0 ? -x : x; }
+static float minf(float a, float b) { return a < b ? a : b; }
+static float maxf(float a, float b) { return a > b ? a : b; }
+
+typedef struct { int left, right, bottom, top; } tile_range;
+static tile_range candidates(const sim_map *map, float x, float y, float dx, float dy, float half) {
+    tile_range r = {
+        tile_x(map, minf(x, x + dx) - half),
+        tile_x(map, maxf(x, x + dx) + half),
+        tile_y(map, minf(y, y + dy) - half),
+        tile_y(map, maxf(y, y + dy) + half),
+    };
+    /* Include the cell on the other side of an exactly touching lower face. */
+    if (r.left > 0) --r.left;
+    if (r.bottom > 0) --r.bottom;
+    if (r.left < 0) r.left = 0;
+    if (r.bottom < 0) r.bottom = 0;
+    if (r.right >= map->width) r.right = map->width - 1;
+    if (r.top >= map->height) r.top = map->height - 1;
+    return r;
+}
+
+/* Swept leading faces, X then Y, preserve the arena's wall-slide tie-break. */
+static void move_x(const sim_map *map, float *px, float py, float half, float distance) {
     float target = *px + distance;
-    for (int y = 0; y < SIM_HEIGHT; ++y) {
-        const float bottom = SIM_ORIGIN_Y + y * SIM_TILE_SIZE;
-        if (py + half <= bottom ||
-            py - half >= bottom + SIM_TILE_SIZE) continue;
-        for (int x = 0; x < SIM_WIDTH; ++x) {
-            if (!sim_solid(x, y)) continue;
-            const float left = SIM_ORIGIN_X + x * SIM_TILE_SIZE;
-            const float low = left - half;
-            const float high = left + SIM_TILE_SIZE + half;
-            if (distance > 0.0f && *px <= low && target > low) target = low;
-            if (distance < 0.0f && *px >= high && target < high) target = high;
+    tile_range r = candidates(map, *px, py, distance, 0, half);
+    for (int y = r.bottom; y <= r.top; ++y) {
+        const float bottom = map->origin_y + y * map->tile_size;
+        if (py + half <= bottom || py - half >= bottom + map->tile_size) continue;
+        for (int x = r.left; x <= r.right; ++x) {
+            if (!sim_map_solid(map, x, y)) continue;
+            const float left = map->origin_x + x * map->tile_size;
+            const float low = left - half, high = left + map->tile_size + half;
+            if (distance > 0 && *px <= low && target > low) target = low;
+            if (distance < 0 && *px >= high && target < high) target = high;
         }
     }
     *px = target;
 }
 
-static void move_y(float px, float *py, float half, float distance) {
+static void move_y(const sim_map *map, float px, float *py, float half, float distance) {
     float target = *py + distance;
-    for (int x = 0; x < SIM_WIDTH; ++x) {
-        const float left = SIM_ORIGIN_X + x * SIM_TILE_SIZE;
-        if (px + half <= left ||
-            px - half >= left + SIM_TILE_SIZE) continue;
-        for (int y = 0; y < SIM_HEIGHT; ++y) {
-            if (!sim_solid(x, y)) continue;
-            const float bottom = SIM_ORIGIN_Y + y * SIM_TILE_SIZE;
-            const float low = bottom - half;
-            const float high = bottom + SIM_TILE_SIZE + half;
-            if (distance > 0.0f && *py <= low && target > low) target = low;
-            if (distance < 0.0f && *py >= high && target < high) target = high;
+    tile_range r = candidates(map, px, *py, 0, distance, half);
+    for (int x = r.left; x <= r.right; ++x) {
+        const float left = map->origin_x + x * map->tile_size;
+        if (px + half <= left || px - half >= left + map->tile_size) continue;
+        for (int y = r.bottom; y <= r.top; ++y) {
+            if (!sim_map_solid(map, x, y)) continue;
+            const float bottom = map->origin_y + y * map->tile_size;
+            const float low = bottom - half, high = bottom + map->tile_size + half;
+            if (distance > 0 && *py <= low && target > low) target = low;
+            if (distance < 0 && *py >= high && target < high) target = high;
         }
     }
     *py = target;
 }
-
-/* Tick timers: initial spawn 120, later spawns 90, shots 60,
-   contact invulnerability 90, bullet lifetime 240. */
-static float absf(float x) { return x < 0 ? -x : x; }
-static int tile_x(float x) { return (int)((x - SIM_ORIGIN_X) / SIM_TILE_SIZE); }
-static int tile_y(float y) { return (int)((y - SIM_ORIGIN_Y) / SIM_TILE_SIZE); }
-static float center_x(int x) { return SIM_ORIGIN_X + (x + .5f) * SIM_TILE_SIZE; }
-static float center_y(int y) { return SIM_ORIGIN_Y + (y + .5f) * SIM_TILE_SIZE; }
 
 /* First segment/AABB intersection, including a coincident starting point. */
 static bool segment_box(float x, float y, float dx, float dy,
@@ -152,17 +168,19 @@ static bool segment_box(float x, float y, float dx, float dy,
     return true;
 }
 
-static float wall_hit(float x, float y, float dx, float dy, float half) {
+static float wall_hit(const sim_map *map, float x, float y, float dx, float dy, float half) {
+    if (sim_map_solid(map, tile_x(map, x), tile_y(map, y))) return 0;
     float first = 2;
-    for (int ty = 0; ty < SIM_HEIGHT; ++ty) {
-        for (int tx = 0; tx < SIM_WIDTH; ++tx) {
-            if (!sim_solid(tx, ty)) continue;
+    tile_range r = candidates(map, x, y, dx, dy, half);
+    for (int ty = r.bottom; ty <= r.top; ++ty) {
+        for (int tx = r.left; tx <= r.right; ++tx) {
+            if (!sim_map_solid(map, tx, ty)) continue;
             float hit;
-            const float left = SIM_ORIGIN_X + tx * SIM_TILE_SIZE;
-            const float bottom = SIM_ORIGIN_Y + ty * SIM_TILE_SIZE;
+            const float left = map->origin_x + tx * map->tile_size;
+            const float bottom = map->origin_y + ty * map->tile_size;
             if (segment_box(x, y, dx, dy, left - half, bottom - half,
-                            left + SIM_TILE_SIZE + half,
-                            bottom + SIM_TILE_SIZE + half, &hit) && hit < first)
+                            left + map->tile_size + half,
+                            bottom + map->tile_size + half, &hit) && hit < first)
                 first = hit;
         }
     }
@@ -175,17 +193,18 @@ static bool spawn(sim_state *state, sim_enemy_kind kind) {
     int slot = 0;
     while (slot < SIM_MAX_ENEMIES && state->enemies[slot].active) ++slot;
     if (slot == SIM_MAX_ENEMIES) return false;
-    enum { WIDTH = SIM_WIDTH - 2, HEIGHT = SIM_HEIGHT - 2,
-           PERIMETER = 2 * WIDTH + 2 * (HEIGHT - 2) };
+    const sim_map *map = state->map;
+    const int WIDTH = map->width - 2, HEIGHT = map->height - 2;
+    const int PERIMETER = 2 * WIDTH + 2 * (HEIGHT - 2);
     /* Each perimeter center is attempted once, with a deterministic wave offset. */
     const unsigned wave = state->ticks / SIM_SPAWN_TICKS;
     for (int attempt = 0; attempt < PERIMETER; ++attempt) {
         int n = (int)((wave * 13u + (unsigned)attempt) % PERIMETER), x, y;
         if (n < WIDTH) { x = n + 1; y = 1; }
-        else if ((n -= WIDTH) < HEIGHT - 2) { x = SIM_WIDTH - 2; y = n + 2; }
-        else if ((n -= HEIGHT - 2) < WIDTH) { x = SIM_WIDTH - 2 - n; y = SIM_HEIGHT - 2; }
-        else { n -= WIDTH; x = 1; y = SIM_HEIGHT - 3 - n; }
-        const float px = center_x(x), py = center_y(y);
+        else if ((n -= WIDTH) < HEIGHT - 2) { x = map->width - 2; y = n + 2; }
+        else if ((n -= HEIGHT - 2) < WIDTH) { x = map->width - 2 - n; y = map->height - 2; }
+        else { n -= WIDTH; x = 1; y = map->height - 3 - n; }
+        const float px = center_x(state->map, x), py = center_y(state->map, y);
         bool occupied = absf(px - state->x) < SIM_PLAYER_HALF + SIM_ENEMY_HALF &&
                         absf(py - state->y) < SIM_PLAYER_HALF + SIM_ENEMY_HALF;
         for (int i = 0; i < SIM_MAX_ENEMIES; ++i) {
@@ -193,7 +212,7 @@ static bool spawn(sim_state *state, sim_enemy_kind kind) {
             if (enemy->active && absf(px - enemy->x) < 2 * SIM_ENEMY_HALF &&
                 absf(py - enemy->y) < 2 * SIM_ENEMY_HALF) occupied = true;
         }
-        if (!occupied && !sim_solid(x, y)) {
+        if (!occupied && !sim_map_solid(map, x, y)) {
             state->enemies[slot] = (sim_enemy){
                 .x = px, .y = py, .hp = health[kind], .active = true,
                 .kind = kind, .attack_ticks = kind == SIM_BOSS ? 240 : 0,
@@ -212,56 +231,57 @@ static void start_boss(sim_state *state) {
     for (int i = 0; i < SIM_MAX_HOSTILE_BULLETS; ++i) state->hostile_bullets[i].active = false;
     state->boss_started = true;
     bool spawned = spawn(state, SIM_BOSS);
-    assert(spawned); // The fixed arena has ample free perimeter cells.
+    assert(spawned); // Validation guarantees ample connected free perimeter cells.
     (void)spawned;
 }
 
 static void chase(sim_state *state) {
-    int distance[SIM_HEIGHT][SIM_WIDTH];
-    int queue[SIM_HEIGHT * SIM_WIDTH], head = 0, tail = 0;
-    for (int y = 0; y < SIM_HEIGHT; ++y)
-        for (int x = 0; x < SIM_WIDTH; ++x) distance[y][x] = -1;
-    const int px = tile_x(state->x), py = tile_y(state->y);
-    assert(!sim_solid(px, py));
+    const sim_map *map = state->map;
+    int distance[SIM_MAP_MAX_SIZE][SIM_MAP_MAX_SIZE];
+    int queue[SIM_MAP_MAX_SIZE * SIM_MAP_MAX_SIZE], head = 0, tail = 0;
+    for (int y = 0; y < map->height; ++y)
+        for (int x = 0; x < map->width; ++x) distance[y][x] = -1;
+    const int px = tile_x(map, state->x), py = tile_y(map, state->y);
+    assert(!sim_map_solid(map, px, py));
     distance[py][px] = 0;
-    queue[tail++] = py * SIM_WIDTH + px;
+    queue[tail++] = py * map->width + px;
     const int dx[4] = {-1, 1, 0, 0}, dy[4] = {0, 0, -1, 1};
     while (head < tail) {
-        const int cell = queue[head++], x = cell % SIM_WIDTH, y = cell / SIM_WIDTH;
+        const int cell = queue[head++], x = cell % map->width, y = cell / map->width;
         for (int i = 0; i < 4; ++i) {
             const int nx = x + dx[i], ny = y + dy[i];
-            if (sim_solid(nx, ny) || distance[ny][nx] >= 0) continue;
+            if (sim_map_solid(map, nx, ny) || distance[ny][nx] >= 0) continue;
             distance[ny][nx] = distance[y][x] + 1;
-            queue[tail++] = ny * SIM_WIDTH + nx;
+            queue[tail++] = ny * map->width + nx;
         }
     }
     for (int i = 0; i < SIM_MAX_ENEMIES; ++i) {
         sim_enemy *enemy = &state->enemies[i];
         if (!enemy->active) continue;
-        const int x = tile_x(enemy->x), y = tile_y(enemy->y);
-        assert(!sim_solid(x, y));
+        const int x = tile_x(map, enemy->x), y = tile_y(map, enemy->y);
+        assert(!sim_map_solid(map, x, y));
         float tx = state->x, ty = state->y;
         if (enemy->kind == SIM_RANGER) {
             float rx = state->x - enemy->x, ry = state->y - enemy->y;
             float range = __builtin_sqrtf(rx * rx + ry * ry);
-            bool visible = wall_hit(enemy->x, enemy->y, rx, ry, SIM_BULLET_HALF) > 1;
+            bool visible = wall_hit(state->map, enemy->x, enemy->y, rx, ry, SIM_BULLET_HALF) > 1;
             if (visible && range >= 48 && range <= 80) continue; // Hold firing distance.
             if (visible && range > 0 && range < 48) {
                 float retreat = (float)(22 * SIM_STEP) / range;
-                move_x(&enemy->x, enemy->y, SIM_ENEMY_HALF, -rx * retreat);
-                move_y(enemy->x, &enemy->y, SIM_ENEMY_HALF, -ry * retreat);
+                move_x(state->map, &enemy->x, enemy->y, SIM_ENEMY_HALF, -rx * retreat);
+                move_y(state->map, enemy->x, &enemy->y, SIM_ENEMY_HALF, -ry * retreat);
                 continue;
             }
         }
         if (distance[y][x] != 0) {
-            tx = center_x(x); ty = center_y(y);
+            tx = center_x(state->map, x); ty = center_y(state->map, y);
             for (int dir = 0; dir < 4; ++dir) {
                 const int nx = x + dx[dir], ny = y + dy[dir];
-                if (sim_solid(nx, ny) || distance[ny][nx] < 0 ||
+                if (sim_map_solid(map, nx, ny) || distance[ny][nx] < 0 ||
                     distance[ny][nx] >= distance[y][x]) continue;
                 /* Align perpendicular before crossing an edge to avoid corner cuts. */
-                if (dx[dir] && absf(enemy->y - ty) < .001f) tx = center_x(nx);
-                if (dy[dir] && absf(enemy->x - tx) < .001f) ty = center_y(ny);
+                if (dx[dir] && absf(enemy->y - ty) < .001f) tx = center_x(state->map, nx);
+                if (dy[dir] && absf(enemy->x - tx) < .001f) ty = center_y(state->map, ny);
                 break;
             }
         }
@@ -271,8 +291,8 @@ static void chase(sim_state *state) {
         assert(enemy->kind >= SIM_CHASER && enemy->kind < SIM_ENEMY_KIND_COUNT);
         const float step = (float)(speeds[enemy->kind] * SIM_STEP);
         if (length > step) { vx *= step / length; vy *= step / length; }
-        move_x(&enemy->x, enemy->y, SIM_ENEMY_HALF, vx);
-        move_y(enemy->x, &enemy->y, SIM_ENEMY_HALF, vy);
+        move_x(state->map, &enemy->x, enemy->y, SIM_ENEMY_HALF, vx);
+        move_y(state->map, enemy->x, &enemy->y, SIM_ENEMY_HALF, vy);
     }
 }
 
@@ -286,7 +306,7 @@ static void shoot(sim_state *state) {
         float dx = enemy->x - state->x, dy = enemy->y - state->y;
         float distance = dx * dx + dy * dy;
         if (distance > nearest || (target >= 0 && distance == nearest)) continue;
-        if (wall_hit(state->x, state->y, dx, dy, SIM_BULLET_HALF) <= 1) continue;
+        if (wall_hit(state->map, state->x, state->y, dx, dy, SIM_BULLET_HALF) <= 1) continue;
         nearest = distance; target = i;
     }
     if (target < 0) return;
@@ -328,7 +348,7 @@ static void collect_gems(sim_state *state) {
         float dx = state->x - gem->x, dy = state->y - gem->y;
         float distance = __builtin_sqrtf(dx * dx + dy * dy);
         if (distance > SIM_MAGNET_RADIUS ||
-            wall_hit(gem->x, gem->y, dx, dy, SIM_GEM_HALF) <= 1) continue;
+            wall_hit(state->map, gem->x, gem->y, dx, dy, SIM_GEM_HALF) <= 1) continue;
         float step = (float)(96 * SIM_STEP);
         if (distance <= SIM_PLAYER_HALF + SIM_GEM_HALF + step) {
             assert(gem->value > 0 && state->xp <= INT_MAX - gem->value);
@@ -370,7 +390,7 @@ static void projectiles(sim_state *state) {
         if (!bullet->active) continue;
         if (bullet->ticks_left <= 0) { bullet->active = false; continue; }
         float dx = bullet->vx * (float)SIM_STEP, dy = bullet->vy * (float)SIM_STEP;
-        float first = wall_hit(bullet->x, bullet->y, dx, dy, SIM_BULLET_HALF);
+        float first = wall_hit(state->map, bullet->x, bullet->y, dx, dy, SIM_BULLET_HALF);
         int target = -1;
         for (int j = 0; j < SIM_MAX_ENEMIES; ++j) {
             sim_enemy *enemy = &state->enemies[j];
@@ -444,7 +464,7 @@ bool sim_blade_position(const sim_state *state, int blade, float *x, float *y) {
     assert(state && x && y && state->blade_count > 0 && state->blade_count <= SIM_MAX_BLADES);
     assert(blade >= 0 && blade < state->blade_count && state->blade_phase < SIM_BLADE_PERIOD);
     blade_point(state->blade_count, blade, state->blade_phase, state->x, state->y, x, y);
-    return wall_hit(state->x, state->y, *x - state->x, *y - state->y, SIM_BLADE_HALF) > 1;
+    return wall_hit(state->map, state->x, state->y, *x - state->x, *y - state->y, SIM_BLADE_HALF) > 1;
 }
 
 static void blades(sim_state *state, float old_x, float old_y) {
@@ -460,12 +480,12 @@ static void blades(sim_state *state, float old_x, float old_y) {
         if (!sim_blade_position(state, i, &x, &y)) continue;
         blade_point(state->blade_count, i, old_phase, old_x, old_y, &previous_x, &previous_y);
         float dx = x - previous_x, dy = y - previous_y;
-        float wall = wall_hit(previous_x, previous_y, dx, dy, SIM_BLADE_HALF);
+        float wall = wall_hit(state->map, previous_x, previous_y, dx, dy, SIM_BLADE_HALF);
         for (int j = 0; j < SIM_MAX_ENEMIES; ++j) {
             sim_enemy *enemy = &state->enemies[j];
             if (!enemy->active || enemy->blade_hurt_ticks) continue;
             // Neither a clipped orbit nor an enemy behind a wall can be hit.
-            if (wall_hit(state->x, state->y, enemy->x - state->x, enemy->y - state->y, 0) <= 1) continue;
+            if (wall_hit(state->map, state->x, state->y, enemy->x - state->x, enemy->y - state->y, 0) <= 1) continue;
             float hit, half = SIM_ENEMY_HALF + SIM_BLADE_HALF;
             if (!segment_box(previous_x, previous_y, dx, dy, enemy->x - half,
                 enemy->y - half, enemy->x + half, enemy->y + half, &hit) || hit >= wall) continue;
@@ -532,7 +552,7 @@ static void ranger_attacks(sim_state *state) {
         if (!enemy->active || enemy->kind != SIM_RANGER) continue;
         assert(enemy->pattern.pattern == sim_ranger_pattern());
         float dx = state->x - enemy->x, dy = state->y - enemy->y;
-        if (dx*dx + dy*dy > 96*96 || wall_hit(enemy->x,enemy->y,dx,dy,SIM_BULLET_HALF) <= 1) {
+        if (dx*dx + dy*dy > 96*96 || wall_hit(state->map, enemy->x,enemy->y,dx,dy,SIM_BULLET_HALF) <= 1) {
             bm_restart(&enemy->pattern, 0); // Reacquisition always gets a full tell.
             enemy->attack_ticks = 0;
             continue;
@@ -581,7 +601,7 @@ static void hostile_projectiles(sim_state *state) {
         if (!b->active) continue;
         if (b->ticks_left <= 0) { b->active = false; continue; }
         float dx = b->vx * (float)SIM_STEP, dy = b->vy * (float)SIM_STEP;
-        float wall = wall_hit(b->x, b->y, dx, dy, SIM_BULLET_HALF), hit;
+        float wall = wall_hit(state->map, b->x, b->y, dx, dy, SIM_BULLET_HALF), hit;
         float half = SIM_BULLET_HALF + SIM_PLAYER_HALF;
         bool player_hit = segment_box(b->x, b->y, dx, dy,
             state->x - half, state->y - half, state->x + half, state->y + half, &hit) && hit < wall;
@@ -643,7 +663,7 @@ static void combat(sim_state *state, float old_x, float old_y) {
 }
 
 void sim_advance(sim_state *state, sim_input input, double elapsed) {
-    assert(state);
+    assert(state && state->map);
     assert(input.x >= -1 && input.x <= 1 && input.y >= -1 && input.y <= 1);
     /* This rejects NaN and both infinities without a platform math library. */
     assert(elapsed >= 0.0 && elapsed <= DBL_MAX);
@@ -658,8 +678,8 @@ void sim_advance(sim_state *state, sim_input input, double elapsed) {
     const double rounding = 8.0 * DBL_EPSILON;
     while (state->accumulator + rounding >= SIM_STEP) {
         float old_x = state->x, old_y = state->y;
-        move_x(&state->x, state->y, SIM_PLAYER_HALF, input.x * step);
-        move_y(state->x, &state->y, SIM_PLAYER_HALF, input.y * step);
+        move_x(state->map, &state->x, state->y, SIM_PLAYER_HALF, input.x * step);
+        move_y(state->map, state->x, &state->y, SIM_PLAYER_HALF, input.y * step);
         combat(state, old_x, old_y);
         if (!state->dead && !state->won) collect_gems(state);
         state->accumulator -= SIM_STEP;

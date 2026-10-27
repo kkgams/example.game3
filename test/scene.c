@@ -1,6 +1,7 @@
 // Test-only application fixture: the production binary has no staging hooks.
 // Include the app in this translation unit to stage real simulation/render state
 // without exporting internals or adding cheats to game/main.c.
+#include "arena.h"
 #include "../game/main.c"
 
 __attribute__((export_name("test_native_click"))) void test_native_click(float nx, float ny) {

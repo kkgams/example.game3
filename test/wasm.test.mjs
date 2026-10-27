@@ -90,6 +90,20 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   }
   const start = player()
   assert.deepEqual(start, {x: -80, y: 0, flip: 0})
+  const authoredMap = JSON.parse(await readFile(new URL('../content/maps/world.tilemap.json', import.meta.url), 'utf8'))
+  assert.ok(calls.some(c => c[0] === 'texImage2D' && c[4] === authoredMap.width && c[5] === authoredMap.height + 1), 'render LUT follows authored dimensions, not screen dimensions')
+  function projectedHud() {
+    const upload = calls.findLast(c => c[0] === 'bufferSubData')[3]
+    const data = new DataView(Uint8Array.from(upload).buffer)
+    const matrix = calls.findLast(c => c[0] === 'uniform4fv')[2]
+    const points = []
+    for (let offset = 60; offset < data.byteLength; offset += 60) {
+      points.push(Math.round((data.getFloat32(offset, true)*matrix[0]+matrix[12])*1e6),
+        Math.round((data.getFloat32(offset+4, true)*matrix[5]+matrix[13])*1e6))
+    }
+    return points
+  }
+  const fixedHud = projectedHud()
   // WASD + arrow aliases remain independent, opposing directions cancel,
   // repeated keydown is idempotent, blur clears held keys.
   instance.exports.key(0, 1) // W
@@ -97,6 +111,8 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
   instance.exports.key(0, 0)
   instance.exports.frame(.125)
   assert.ok(Math.abs(player().y - 8) < .001, 'arrow still held after releasing W')
+  assert.deepEqual(projectedHud(), fixedHud, 'HUD stays screen-fixed while the world camera follows')
+  assert.ok(Math.abs(calls.findLast(c => c[0] === 'uniform4fv')[2][13]) > .01, 'world camera actually moved with player')
   instance.exports.key(2, 1) // S opposes Up
   instance.exports.frame(.125)
   assert.ok(Math.abs(player().y - 8) < .001, 'opposing bindings cancel')
@@ -170,7 +186,8 @@ test('real WASM initializes, draws, resizes and cleans up through a mock GPU', a
       instance.exports.key(3, 1)
       instance.exports.frame(10)
       assert.deepEqual(calls.findLast(c => c[0] === 'bufferSubData')[3], frozen, 'level-up pauses the entire world')
-      instance.exports.choose_upgrade(2) // Speed: keep baseline weapon for the death test.
+      // Screen-fixed speed card remains clickable despite the nonzero world camera.
+      instance.exports.choose_reward(.5-72/320, .5+40/240) // Keep baseline weapon for death test.
       instance.exports.frame(0)
       assert.ok(!hudText().includes('LEVELUP'), 'choice resumes gameplay')
       const resumed = player()

@@ -33,3 +33,10 @@ edited-pattern bytes matched. No Odin/generated decoder or sibling implementatio
 was copied. The old game3 C ranger fixture survives only as a test oracle for
 500-tick parity, not as production data. Historical input hash entries above and
 `SOURCE.json` remain unchanged.
+
+The collision map JSON, `content/maps/build.mjs`, `game/map.{h,c}` and related
+camera/simulation integration are newly authored in this experiment. The small
+arena JSON transcribes game3's original procedural border/central block exactly;
+the larger world is new placeholder collision geometry, not imported artwork or
+an external map format. No new third-party assets, dependencies, sibling code or
+historical input hash changes were introduced.

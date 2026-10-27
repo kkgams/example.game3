@@ -9,7 +9,7 @@ import { embedPack } from '../content/gams/embed.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const zig = process.env.ZIG || 'zig'
-const sources = ['test/packed-game.c','game/sim.c','game/patterns.c','game/bulletml/bulletml.c','game/bulletml/pack.c']
+const sources = ['test/packed-game.c','game/sim.c','game/map.c','game/patterns.c','game/bulletml/bulletml.c','game/bulletml/pack.c']
 
 test('authored spread/cadence/speed edits reach the same real native and WASM simulation without C changes', async t => {
   const build = path.join(root,'build.nosync')
@@ -48,6 +48,8 @@ test('authored spread/cadence/speed edits reach the same real native and WASM si
     }
     const includes = path.join(project,'build.nosync/content')
     await writeFile(path.join(includes,'bulletml-pack.h'),embedPack(packed.bytes))
+    for (const header of ['world-map.h','arena-map.h'])
+      await copyFile(path.join(root,'build.nosync/content',header),path.join(includes,header))
     const native = path.join(project,'probe')
     execFileSync(zig,['cc',...sources,'-Igame',`-I${includes}`,'-std=c11','-Wall','-Wextra','-Werror','-o',native],{cwd:root,encoding:'utf8'})
     const expected = JSON.parse(execFileSync(native,[],{encoding:'utf8'}))

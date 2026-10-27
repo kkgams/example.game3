@@ -2,15 +2,17 @@
 
 A fresh **C + Sokol** experiment based on your `gams3/plugins/game` setup.
 Shared tilemap and instanced-sprite pipelines, two targets: **macOS Metal** and
-**browser WebGL2/WASM**. Move a placeholder player around a fixed arena using
-**WASD or arrow keys**. Attacks fire automatically at nearby visible enemies.
+**browser WebGL2/WASM**. Move a placeholder player across a scrolling map using
+**WASD or arrow keys**. A clamped camera follows the player across an authored
+32x24 collision tilemap, larger than the base 320x240 view. Attacks fire automatically at nearby visible enemies.
 Chasers, runners and brutes hunt around the solid outer walls and central block;
 rangers keep their distance and fire aimed fans. Contact and pink enemy shots cost health. Survive three 30-second waves, then defeat the final boss. Collect XP gems to fill the XP bar. Level-up pauses the world;
 press **1–3** for shot damage, shot speed or movement speed; **4** unlocks
 orbiting blades. Once unlocked, **4–6** upgrade blade damage, count or spin.
 The HUD shows time remaining, wave, health, kills, level and XP, plus boss health
 during the duel. After winning or dying, press **R** to restart.
-Assets, the map and spawn timing remain procedural/hand-authored.
+Graphics and spawn timing remain procedural/hand-authored; collision now comes
+from `content/maps/world.tilemap.json`, independently of rendering tile IDs.
 
 `gams.json` now configures Content Files, BulletML preview and a Nodegraph pack
 pipeline, with scripts/assets under `content/`. The original Files/Code-only
@@ -173,13 +175,42 @@ headers. The next build regenerates missing depfiles to restore include tracking
 and opposing inputs cancelling. Frame time accumulates; each call accepts at
 most 0.25 seconds to bound catch-up after stalls. Collision sweeps a 10x10 player
 AABB against solid 16x16 tiles, resolving X then Y for stable wall sliding.
-Collision and rendered tile IDs share one hand-authored map source.
+Collision reads an authored binary grid; temporary wall/floor graphics derive
+from it without making atlas tile IDs part of gameplay.
 
 Native frames supply Sokol elapsed seconds. Browser `frame(elapsed)` receives
 requestAnimationFrame elapsed seconds; `key(index,down)` uses the eight physical
 bindings in `game/app.h`, and `release_keys()` clears held input. WASD and arrow
 bindings are tracked independently. Simulation state is separate from rendering;
 the BulletML pack decoder is separate from simulation/rendering, and there is no director.
+
+## Authored tilemap
+
+`content/maps/world.tilemap.json` is the playable 32x24 map (512x384 world pixels).
+`0` means walkable, `1` means wall; outside is solid. JSON rows are **top-to-bottom**,
+left-to-right, while C/world coordinates are Y-up with a bottom-left origin.
+The Node builder reverses rows once into the same ignored C header for both targets.
+Edit in GAMS Code or another text editor, then `make native web` and restart/Reload.
+No runtime JSON parser, Host, Node or filesystem dependency ships with the game.
+
+Width/height may be 8..64, using 16-pixel cells. Explicit origin/spawn use world
+pixels, bounded to +/-32768 to retain usable float32 precision. Border walls must
+be sealed, all free cells cardinally connected, at least eight inner-perimeter
+spawn cells free, and the complete 10x10 player spawn body clear. Invalid data
+fails at build/startup instead of silently reusing an older map. The original
+16x10 arena is authored separately for unchanged combat regression tests.
+
+Map bounds drive movement, projectiles, blades, LOS, BFS and enemy/boss spawns,
+not screen size. Collision scans only swept candidate cells; BFS storage is
+bounded for 64x64. The camera follows/clamps to map bounds, centering maps smaller
+than the visible viewport. HUD/reward geometry and pointer hitboxes remain
+screen-fixed; UI camera cancellation retains one sprite-stream update per frame.
+
+This slice deliberately has **collision only**: the checker/wall art is a debug
+visualization. Future graphic tile layers and placed-object lists for pickups,
+landmarks or special places should share this coordinate system, not overload
+`0/1`. No map editor, Tiled importer, placed pickups or special-place behavior is
+claimed yet. See [map format](content/maps/README.md).
 
 ## Timed run
 
@@ -330,7 +361,7 @@ Odin/generated decoders and the director remain absent. The original triangle sh
 is retained as a shader-generation test fixture, not drawn by the app. Output
 filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
 
-- `make test`: passed (124 checks with the optional published-GAMS fixture enabled; otherwise 123 pass / one parity check skips). Includes standalone C movement/collision
+- `make test`: passed (171 pass / one optional published-GAMS parity check skipped). Includes standalone C movement/collision
   assertions (movement, fixed-step timing, collision, spawning, chase paths,
   targeting/line of sight, swept projectile hits, pool saturation, contact damage,
   death/reset, XP drops/attraction, blocked pickups, pool merging, exact collection,
@@ -366,6 +397,12 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   every command/mode/reference, capacities, every truncated prefix and malformed
   headers/tags/values. Build tests cover source edits, unchanged/incremental Make,
   newer GAMS pack preservation and missing-input failures despite stale artifacts.
+  Map checks cover JSON orientation/shape/binary values, connectivity, spawn
+  clearance, strict failures and incremental Make. Native/WASM tests exercise
+  64x64 sweeps, large-map BFS, map-aware spawns/boss entry and camera clamps.
+  An isolated JSON wall edit changes the same real native/WASM movement probe
+  without C edits. The actual browser app checks scrolling HUD projection and
+  screen-fixed reward clicks with a nonzero camera.
   A separate actual native/WASM simulation probe changes spread, delay and speed
   in isolated JSON copies, proving new shots with unchanged C. Frame counts match
   exactly; normalized float32 velocities are compared within a few ulps.
@@ -398,7 +435,9 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   reproduced atlas-edge transparency before the shader fix and pass afterward.
   A staged Chrome run also verified the ranger silhouette, warning, and live
   three-shot VM fan without console errors; this was repeated after replacing
-  the C fixture with decoded authored pack data. Full human weapon/enemy balance
+  the C fixture with decoded authored pack data. The newer larger map was also
+  visually checked scrolling north to its camera clamp, with screen-fixed HUD
+  and no Chrome errors/warnings. Full human weapon/enemy balance
   playtesting remains outstanding. Earlier checks verified obstacle
   sliding, outer-wall collision, focus release, sprite flips, opacity and tint.
 - Zig 0.17.0: `make native`, `make smoke-native` and `make test` pass.

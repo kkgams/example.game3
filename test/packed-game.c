@@ -1,5 +1,5 @@
 // Same actual simulation/pack adapter compiled natively and freestanding WASM.
-#include "sim.h"
+#include "arena.h"
 #include "patterns.h"
 #include <assert.h>
 
