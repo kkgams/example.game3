@@ -168,3 +168,7 @@ clean:
 	rm -rf $(BUILD)
 
 -include $(SHADER_DEPFILES)
+
+.PHONY: open
+open: tools/gams.app
+	GAMS_APP_CWD="$(CURDIR)" ./tools/gams.app/Contents/MacOS/gams
