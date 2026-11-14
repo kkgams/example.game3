@@ -8,7 +8,7 @@ GAMS_HOST_BIN ?= tools/gams.app/Contents/MacOS/gams
 BUILD := build.nosync
 SOKOL_URL ?= https://raw.githubusercontent.com/floooh/sokol/master
 SHDC_URL ?= https://raw.githubusercontent.com/floooh/sokol-tools-bin/master/bin
-GAMS_RELEASE_API ?= https://api.github.com/repos/kkgams/gams/releases/latest
+GAMS_RELEASE_API ?= https://api.github.com/repos/kkgams/gams/releases/tags/v3.2.0
 UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_S),Darwin)
@@ -34,7 +34,7 @@ GAME_LOGIC_SOURCES := game/sim.c game/map.c game/patterns.c game/bulletml/bullet
 GAME_SOURCES := game/main.c $(GAME_LOGIC_SOURCES) game/render/render2d.c
 CONTENT_PACK := $(BUILD)/content/bulletml.rspk
 CONTENT_HEADER := $(BUILD)/content/bulletml-pack.h
-CONTENT_INPUTS := $(wildcard content/bulletml/*.bulletml.json) content/gams/graphs/bulletml.ng.json $(wildcard content/gams/schema/*.rspk.json)
+CONTENT_INPUTS := $(wildcard content/bulletml/*.bulletml.json) content/gams/graphs/bulletml.ng.lua $(wildcard content/gams/schema/*.rspk.json)
 CONTENT_SCRIPTS := content/gams/pack.mjs content/gams/nodes/bulletml-slots-json.lua content/gams/nodes/build-bulletml-respack.lua
 MAP_HEADER := $(BUILD)/content/world-map.h
 MAP_TEST_HEADER := $(BUILD)/content/arena-map.h
@@ -66,16 +66,19 @@ $(SOKOL_SHDC):
 tools/gams.app:
 	@test "$(UNAME_S)" = Darwin && test "$(SHDC_PLATFORM)" = osx_arm64 || \
 		{ echo 'GAMS release download requires macOS Apple Silicon' >&2; exit 1; }
+	@test ! -L tools && test ! -e tools/gams-release-notices && test ! -L tools/gams-release-notices || \
+		{ echo 'Refusing existing/symlinked Host tools or notices target' >&2; exit 1; }
 	@mkdir -p tools "$(BUILD)"
 	@set -eu; stage=$$(mktemp -d "$(BUILD)/gams-download.XXXXXX"); \
 		trap 'rm -rf "$$stage"' EXIT; \
 		$(CURL) --fail --location --silent --show-error "$(GAMS_RELEASE_API)" --output "$$stage/release.json"; \
-		url=$$($(PYTHON) -c 'import json, sys; release = json.load(open(sys.argv[1])); assets = [a for a in release["assets"] if a["name"].startswith("GAMS-") and a["name"].endswith("-macos-aarch64.zip")]; assert len(assets) == 1, "Expected exactly one GAMS macOS Apple Silicon ZIP asset"; print(assets[0]["browser_download_url"])' "$$stage/release.json"); \
+		url=$$($(PYTHON) -c 'import json, sys; release = json.load(open(sys.argv[1])); assets = [a for a in release["assets"] if a["name"] == "GAMS-macos-aarch64.zip"]; assert len(assets) == 1, "Expected exactly one GAMS macOS Apple Silicon ZIP asset"; print(assets[0]["browser_download_url"])' "$$stage/release.json"); \
 		$(CURL) --fail --location --silent --show-error "$$url" --output "$$stage/gams.zip"; \
 		unzip -q "$$stage/gams.zip" -d "$$stage/unpacked"; \
 		test -f "$$stage/unpacked/GAMS.app/Contents/Info.plist"; \
 		test -x "$$stage/unpacked/GAMS.app/Contents/MacOS/gams"; \
-		mv "$$stage/unpacked/GAMS.app" "$@"
+		mv "$$stage/unpacked/GAMS.app" "$@"; \
+		mv "$$stage/unpacked" tools/gams-release-notices
 
 # Missing local depfiles require one regeneration to restore include tracking.
 ifneq ($(strip $(SHADERS_MISSING_DEPS)),)
@@ -119,7 +122,7 @@ $(CONTENT_PACK): $(CONTENT_INPUTS) $(CONTENT_SCRIPTS)
 content-inputs:
 	node content/gams/pack.mjs --check
 
-$(CONTENT_HEADER): $(CONTENT_PACK) content/gams/embed.mjs content/gams/graphs/bulletml.ng.json | content-inputs
+$(CONTENT_HEADER): $(CONTENT_PACK) content/gams/embed.mjs content/gams/graphs/bulletml.ng.lua | content-inputs
 	node content/gams/embed.mjs "$(CONTENT_PACK)" "$@"
 
 # Collision data is independent from tile graphics and the BulletML wire format.
@@ -170,5 +173,8 @@ clean:
 -include $(SHADER_DEPFILES)
 
 .PHONY: open
+ifeq ($(GAMS_HOST_BIN),tools/gams.app/Contents/MacOS/gams)
 open: tools/gams.app
-	GAMS_APP_CWD="$(CURDIR)" ./tools/gams.app/Contents/MacOS/gams
+endif
+open:
+	GAMS_APP_CWD="$(CURDIR)" "$(GAMS_HOST_BIN)" --project-dir "$(CURDIR)" --config gams.json

@@ -1,9 +1,17 @@
 {
   "plugins": [
-    "https://github.com/kkgams/plugin.fs/releases/download/v0.2.0/plugin.fs.wasm",
-    "https://github.com/kkgams/plugin.layout/releases/download/v0.2.0/plugin.layout.wasm",
-    "https://github.com/kkgams/plugin.lua/releases/download/v0.2.0/plugin.lua.wasm",
-    "https://github.com/kkgams/plugin.respack/releases/download/v0.2.0/plugin.respack.wasm"
+    {
+      "$file": "https://github.com/kkgams/plugin.fs/releases/download/v0.2.3/plugin.fs.wasm"
+    },
+    {
+      "$file": "https://github.com/kkgams/plugin.layout/releases/download/v0.2.3/plugin.layout.wasm"
+    },
+    {
+      "$file": "https://github.com/kkgams/plugin.lua/releases/download/v0.3.0/plugin.lua.wasm"
+    },
+    {
+      "$file": "https://github.com/kkgams/plugin.respack/releases/download/v0.2.2/plugin.respack.wasm"
+    }
   ],
   "ui": {
     "keys": [
@@ -19,34 +27,74 @@
       }
     ],
     "theme": {
-      "url": "https://github.com/kkgams/theme.the98/releases/download/v0.2.0/theme.the98-0.2.0.zip#themes/the98.css"
+      "url": {
+        "$file": {
+          "url": "https://github.com/kkgams/theme.gams/releases/download/v1.0.2/theme.gams.zip",
+          "entry": "themes/the98.css"
+        }
+      }
     },
     "services": {
       "ui-context": {
-        "url": "https://github.com/kkgams/ui-service.context/releases/download/v0.2.0/ui-service.context-0.2.0.zip#ui-plugins/context.js"
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/ui-service.context/releases/download/v0.2.3/ui-service.context.zip",
+            "entry": "ui-plugins/context.js"
+          }
+        }
       },
       "ui-keys": {
-        "url": "https://github.com/kkgams/ui-service.keys/releases/download/v0.2.0/ui-service.keys-0.2.0.zip#ui-plugins/keys.js"
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/ui-service.keys/releases/download/v0.2.2/ui-service.keys.zip",
+            "entry": "ui-plugins/keys.js"
+          }
+        }
       },
       "ui-toast": {
-        "url": "https://github.com/kkgams/ui-service.toast/releases/download/v0.2.0/ui-service.toast-0.2.0.zip#ui-plugins/toast.js"
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/ui-service.toast/releases/download/v0.2.2/ui-service.toast.zip",
+            "entry": "ui-plugins/toast.js"
+          }
+        }
       },
       "ui-popup": {
-        "url": "https://github.com/kkgams/ui-service.popup/releases/download/v0.2.0/ui-service.popup-0.2.0.zip#ui-plugins/popup.js"
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/ui-service.popup/releases/download/v0.2.2/ui-service.popup.zip",
+            "entry": "ui-plugins/popup.js"
+          }
+        }
       },
       "ui-tooltip": {
-        "url": "https://github.com/kkgams/ui-service.tooltip/releases/download/v0.2.0/ui-service.tooltip-0.2.0.zip#ui-plugins/tooltip.js"
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/ui-service.tooltip/releases/download/v0.2.2/ui-service.tooltip.zip",
+            "entry": "ui-plugins/tooltip.js"
+          }
+        }
       },
       "ui-layout": {
-        "url": "https://github.com/kkgams/ui-service.layout/releases/download/v0.2.0/ui-service.layout-0.2.0.zip#ui-plugins/layout.js",
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/ui-service.layout/releases/download/v0.2.2/ui-service.layout.zip",
+            "entry": "ui-plugins/layout.js"
+          }
+        },
         "config": {
-          "layout": "<view-files data-root=\"content\" /><view-bullet setup=\"0:h:70\" data-source=\"content/bulletml/ranger-fan.bulletml.json\" /><view-ng setup=\"1:v:50\" data-source=\"content/gams/graphs/bulletml.ng.json\" />"
+          "layout": "<view-files data-root=\"content\" /><view-bullet setup=\"0:h:70\" data-source=\"content/bulletml/ranger-fan.bulletml.json\" /><view-ng setup=\"1:v:50\" data-source=\"content/gams/graphs/bulletml.ng.lua\" />"
         }
       }
     },
     "views": {
       "view-files": {
-        "url": "https://github.com/kkgams/view.files/releases/download/v0.2.0/view.files-0.2.0.zip#views/view-files.js",
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/view.files/releases/download/v1.0.1/view.files.zip",
+            "entry": "views/view-files.js"
+          }
+        },
         "label": "Files",
         "group": "Project",
         "internal": false,
@@ -54,7 +102,7 @@
           "open": {
             "ranger-fan.bulletml.json": "view-bullet",
             "aim.bulletml.json": "view-bullet",
-            "bulletml.ng.json": "view-ng",
+            "bulletml.ng.lua": "view-ng",
             "json": "view-code",
             "lua": "view-code",
             "md": "view-code",
@@ -66,7 +114,12 @@
         }
       },
       "view-bullet": {
-        "url": "https://github.com/kkgams/view.bullet/releases/download/v0.2.0/view.bullet-0.2.0.zip#views/view-bullet.js",
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/view.bullet/releases/download/v0.2.1/view.bullet.zip",
+            "entry": "views/view-bullet.js"
+          }
+        },
         "label": "BulletML",
         "group": "Content",
         "internal": false,
@@ -75,11 +128,16 @@
         }
       },
       "view-ng": {
-        "url": "https://github.com/kkgams/view.ng/releases/download/v0.1.0/view.ng-0.1.0.zip#views/view-ng.js",
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/view.ng/releases/download/v0.3.1/view.ng.zip",
+            "entry": "views/view-ng.js"
+          }
+        },
         "label": "BulletML Pipeline",
         "group": "Content",
         "internal": false,
-        "defaultSource": "content/gams/graphs/bulletml.ng.json",
+        "defaultSource": "content/gams/graphs/bulletml.ng.lua",
         "config": {
           "background": [
             0.043,
@@ -196,7 +254,12 @@
         }
       },
       "view-ng-node": {
-        "url": "https://github.com/kkgams/view.ng-node/releases/download/v0.1.0/view.ng-node-0.1.0.zip#views/view-ng-node.js",
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/view.ng/releases/download/v0.3.1/view.ng.zip",
+            "entry": "views/view-ng-node.js"
+          }
+        },
         "label": "Node Editor",
         "internal": true,
         "config": {
@@ -246,17 +309,32 @@
         }
       },
       "view-code": {
-        "url": "https://github.com/kkgams/view.code/releases/download/v0.2.0/view.code-0.2.0.zip#views/view-code.js",
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/view.code/releases/download/v0.2.2/view.code.zip",
+            "entry": "views/view-code.js"
+          }
+        },
         "label": "Code",
         "internal": true
       },
       "files-rename": {
-        "url": "https://github.com/kkgams/view.files-rename/releases/download/v0.2.0/view.files-rename-0.2.0.zip#views/files-rename.js",
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/view.files/releases/download/v1.0.1/view.files.zip",
+            "entry": "views/files-rename.js"
+          }
+        },
         "label": "Rename File",
         "internal": true
       },
       "files-default": {
-        "url": "https://github.com/kkgams/view.files-default/releases/download/v0.2.1/view.files-default-0.2.1.zip#views/files-default.js",
+        "url": {
+          "$file": {
+            "url": "https://github.com/kkgams/view.files/releases/download/v1.0.1/view.files.zip",
+            "entry": "views/files-default.js"
+          }
+        },
         "label": "File Info",
         "internal": true
       }

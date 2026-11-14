@@ -22,10 +22,10 @@ standalone, not embedded in a GAMS View.
 
 ## Build and run
 
-Prerequisites: Zig (native/web builds tested with 0.17.0), Make, Python 3, curl, and
+Prerequisites: Zig (native/web builds tested with 0.17.1), Make, Python 3, curl, and
 Node.js 22+ for content builds and tests. First use of missing dependencies requires HTTPS access.
 Native additionally requires macOS with Xcode SDK access and its license accepted
-by you. No npm dependencies, Emscripten, Host or sibling builds.
+by you. Use `nix develop` for pinned tools. No npm dependencies, Emscripten, Host or sibling builds for standalone targets.
 
 ```sh
 cd example.game3
@@ -92,23 +92,24 @@ change repository settings or perform a deployment by itself.
 make open  # download GAMS if absent, then open this Project
 ```
 
-Requires macOS Apple Silicon, Make, curl, Python 3 and `unzip`. Uses the latest
-published `kkgams/gams` release at `tools/gams.app`; existing apps are not updated.
-Remove that directory to download a newer release. The Host stays attached to the
+Requires macOS Apple Silicon, Make, curl, Python 3 and `unzip`. Uses pinned
+published `kkgams/gams` v3.2.0 at `tools/gams.app`; existing apps are not updated.
+Existing apps are preserved; use `GAMS_HOST_BIN=/absolute/gams` for a compatible supplied Host. The Host stays attached to the
 terminal for logs. Existing `make run` behavior is unchanged.
 
 ## GAMS authoring (optional)
 
 See [content setup and boundaries](content/README.md). The canonical tree is
 `content/bulletml/` for pattern JSON and `content/gams/` for Project-owned graph,
-node scripts, schema and compiler. `ng/compile-graph.lua` is only a compatibility
-forwarder required by the released Nodegraph View; no Host/View source is copied.
+node scripts and schema. The released Nodegraph View owns compilation; saved
+`.ng.lua` documents contain its generated execution runtime, with attribution
+under `content/gams/licenses/view.ng/`. No Project compiler or forwarder remains.
 
 Reopen this Project in GAMS to register the new published Units. The default layout
 opens Content Files, the ranger fan preview, and the BulletML packaging graph.
-Edit pattern JSON in GAMS and Run `content/gams/graphs/bulletml.ng.json` to write
+Edit pattern JSON in GAMS and Run `content/gams/graphs/bulletml.ng.lua` to write
 `build.nosync/content/bulletml.rspk`. The graph packs the ranger and an aimed-shot
-example and generates no decoder. CLI equivalent after Unit installation:
+example and generates no decoder. CLI equivalent after exporting the native-prepared snapshot described in the content guide:
 
 ```sh
 make content
@@ -133,14 +134,14 @@ source inputs never silently fall back to an old pack. Published Views/plugins a
 ### Optional GAMS Host download
 
 ```sh
-make tools/gams.app  # download the latest kkgams/gams release only if absent
+make tools/gams.app  # download pinned GAMS v3.2.0 only if absent
 ```
 
-Requires macOS Apple Silicon and `unzip`. Fetches release metadata from GitHub,
+Requires macOS Apple Silicon and `unzip`. Fetches pinned v3.2.0 release metadata from GitHub,
 extracts the macOS ARM64 app and installs it at `tools/gams.app`. Existing apps
-are untouched; remove that directory to download a newer release. Temporary
+are untouched; use an explicit `GAMS_HOST_BIN` override to test a compatible Host. Temporary
 archives/extraction stay under `build.nosync/` and are cleaned on success/failure.
-`make clean` preserves the installed app. No app launch or Host integration is
+`make clean` preserves the installed app and `tools/gams-release-notices/`. No app launch or Host integration is
 performed, and standalone builds do not require this target.
 
 ## Dependencies and shaders
@@ -401,9 +402,9 @@ filenames (`triangle`, `triangle.wasm`) are retained for runner compatibility.
   timing/cardinal aim, actual player hits, approach/hold/retreat, blocked LOS and
   reacquisition, pool saturation without replay, pause/frame partitions, waves,
   XP, boss entry and reset. Real WASM tests verify spawn initialization, warning,
-  paused VM, emitted shots and a real kill-to-blue-gem path. Fifteen authoring
-  checks cover Unit sources/routes, renderer config, graph references, pattern
-  JSON baseline, compiler shim, cache names and RSPK header/error diagnostics.
+  paused VM, emitted shots and a real kill-to-blue-gem path. Authoring
+  checks cover native resource expressions/routes, renderer config, executable graph
+  metadata, native-prepared paths, stale snapshots, REPL errors and RSPK diagnostics.
   Decoder tests cover the original 500-tick fan trace, copied string/IR ownership,
   every command/mode/reference, capacities, every truncated prefix and malformed
   headers/tags/values. Build tests cover source edits, unchanged/incremental Make,
@@ -477,3 +478,12 @@ tasks. The standalone Pages deployment branch is `release`; origin is
 `git@github.com:kkgams/example.game3.git`. No hosted repository creation or push
 has been performed by this task.
 Previous experiments and the source gams3 checkout remain unchanged.
+
+### Current GAMS integration validation
+
+The executable-document migration was checked with released GAMS v3.2.0,
+published Lua/FS/respack and view.ng v0.3.1 (compiler identical to v0.3.0).
+The pack remains two patterns/344 bytes. Real Host and portable outputs match
+exactly, including isolated spread/delay/speed edits consumed by native and WASM
+simulation. Pinned Nix Zig 0.17.1 builds `make native` and passes `make test`.
+Earlier GUI/renderer evidence above is historical, not a new visual check.

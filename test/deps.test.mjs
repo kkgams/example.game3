@@ -32,7 +32,7 @@ printf '%s\\n' "$url" > "$output"
 if [ -f fail-download ]; then exit 22; fi
 case "$url" in
   https://example.invalid/release) cp release.json "$output" ;;
-  https://example.invalid/GAMS-fixture-macos-aarch64.zip) cp gams.zip "$output" ;;
+  https://example.invalid/GAMS-macos-aarch64.zip) cp gams.zip "$output" ;;
 esac
 `)
   await chmod(curl, 0o755)
@@ -84,10 +84,11 @@ async function gamsFixture(t) {
   await writeFile(path.join(contents, 'Info.plist'), '<plist/>')
   await writeFile(path.join(contents, 'MacOS/gams'), '#!/bin/sh\nexit 0\n')
   await chmod(path.join(contents, 'MacOS/gams'), 0o755)
-  execFileSync('zip', ['-qr', '../gams.zip', 'GAMS.app'], { cwd: path.join(folder, 'archive') })
+  await writeFile(path.join(folder, 'archive/NOTICE'), 'release notices')
+  execFileSync('zip', ['-qr', '../gams.zip', 'GAMS.app', 'NOTICE'], { cwd: path.join(folder, 'archive') })
   await writeFile(path.join(folder, 'release.json'), JSON.stringify({ assets: [{
-    name: 'GAMS-fixture-macos-aarch64.zip',
-    browser_download_url: 'https://example.invalid/GAMS-fixture-macos-aarch64.zip'
+    name: 'GAMS-macos-aarch64.zip',
+    browser_download_url: 'https://example.invalid/GAMS-macos-aarch64.zip'
   }] }))
   return folder
 }
@@ -100,6 +101,7 @@ test('GAMS app file target installs the release once and survives clean', async 
   const executable = path.join(folder, 'tools/gams.app/Contents/MacOS/gams')
   assert.ok((await stat(executable)).mode & 0o111)
   assert.equal((await downloads(folder)).length, 2)
+  assert.equal(await readFile(path.join(folder, 'tools/gams-release-notices/NOTICE'), 'utf8'), 'release notices')
   assert.deepEqual(await readdir(path.join(folder, 'build.nosync')), [])
   await writeFile(executable, 'local app snapshot')
   make(folder, ...gamsArgs, 'GAMS_RELEASE_API=https://example.invalid/changed')
@@ -149,4 +151,13 @@ test('failed downloads leave no partial target and can be retried', async t => {
   await rm(path.join(folder, 'fail-download'))
   make(folder, 'game/vendor/sokol_app.h')
   await stat(path.join(folder, 'game/vendor/sokol_app.h'))
+})
+
+test('GAMS download refuses a supplied notices directory before downloading', async t => {
+  const folder = await gamsFixture(t)
+  await mkdir(path.join(folder, 'tools/gams-release-notices'), { recursive: true })
+  const result = spawnSync('make', ['CURL=./fake-curl', ...gamsArgs], { cwd: folder, encoding: 'utf8' })
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /Refusing existing/)
+  await assert.rejects(stat(path.join(folder, 'downloads.log')), { code: 'ENOENT' })
 })

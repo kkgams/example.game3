@@ -33,7 +33,6 @@ test('authored spread/cadence/speed edits reach the same real native and WASM si
       // Optional real-publisher parity: same edited sources -> actual GAMS Lua
       // graph -> published respack component -> these native/WASM game builds.
       await copyFile(path.join(root,'gams.json'),path.join(project,'gams.json'))
-      await cp(path.join(root,'ng'),path.join(project,'ng'),{recursive:true})
       const configuredHost = process.env.GAMS_HOST_BIN
       assert.ok(configuredHost === undefined || configuredHost.trim().length > 0)
       execFileSync(process.execPath,[path.join(project,'content/gams/build.mjs')],{

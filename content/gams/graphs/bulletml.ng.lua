@@ -1,25 +1,10 @@
--- compile-graph.lua
---
--- Compiles a flattened browser view-ng node array into one Lua program.
---
--- Compiler input:
---   _G.input or input: JSON string containing the executable graph produced by
---   flattenNgGraph(view-ng.getGraph()). Group boundaries are resolved before
---   this compiler is invoked.
---
--- Compiler output:
---   main() returns generated Lua source code as a string.
---
--- Generated program conventions:
---   * code-node scripts execute with `inputs` and `outputs` tables in scope
---   * branch activity is available as `inputs.active[portId]`
---   * port names are available as `inputs.names[portId]` / `outputs.names[portId]`
---   * outgoing branch activity is controlled with `outputs.active[portId]`
---   * code-node scripts may also use `_G.inputs` and `_G.outputs`
---   * final graph results are returned from generated main()
---   * NODE_CODE nodes with no outputs are treated as run targets without final result output
---   * optional progress is provided by emitting an injected `__ng_progress` hook
-
+-- Executable node graph; edit through view.ng.
+local __ng_original_json = "[{\"id\":1,\"kind\":4,\"x\":80,\"y\":80,\"name\":\"Pattern sources\",\"inputs\":[],\"outputs\":[{\"id\":1,\"name\":\"paths\",\"value\":\"[\\\"content/bulletml/ranger-fan.bulletml.json\\\",\\\"content/bulletml/aim.bulletml.json\\\"]\"}]},{\"id\":2,\"kind\":2,\"x\":320,\"y\":80,\"name\":\"BulletML Slots JSON\",\"codePath\":\"../nodes/bulletml-slots-json.lua\",\"inputs\":[{\"id\":1,\"name\":\"paths\",\"srcNodeId\":1,\"srcOutputId\":1}],\"outputs\":[{\"id\":1,\"name\":\"slots_json\",\"value\":null}]},{\"id\":3,\"kind\":4,\"x\":80,\"y\":280,\"name\":\"Pack paths\",\"inputs\":[],\"outputs\":[{\"id\":1,\"name\":\"schemaPath\",\"value\":\"\\\"content/gams/schema/bulletml.rspk.json\\\"\"},{\"id\":2,\"name\":\"outputPath\",\"value\":\"\\\"build.nosync/content/bulletml.rspk\\\"\"}]},{\"id\":4,\"kind\":2,\"x\":560,\"y\":80,\"name\":\"Build BulletML Respack\",\"codePath\":\"../nodes/build-bulletml-respack.lua\",\"inputs\":[{\"id\":1,\"name\":\"schemaPath\",\"srcNodeId\":3,\"srcOutputId\":1},{\"id\":2,\"name\":\"slotsJson\",\"srcNodeId\":2,\"srcOutputId\":1},{\"id\":3,\"name\":\"outputPath\",\"srcNodeId\":3,\"srcOutputId\":2}],\"outputs\":[{\"id\":1,\"name\":\"path\",\"value\":null}]},{\"id\":5,\"kind\":1,\"x\":800,\"y\":80,\"name\":\"BulletML pack\",\"inputs\":[{\"id\":1,\"name\":\"path\",\"srcNodeId\":4,\"srcOutputId\":1}],\"outputs\":[]}]"
+local __ng_source_path = "content/gams/graphs/bulletml.ng.lua"
+function ng_graph_json() return __ng_original_json end
+function ng_graph_import(path) return import(path) end
+-- Adapted from example.game1/ng/compile-graph.lua (Apache-2.0, GAMS owner-controlled).
+-- Modified: execute dynamically imported node modules instead of embedding Project code.
 local NG = {
 	NODE_GOAL = 1,
 	NODE_CODE = 2,
@@ -35,18 +20,17 @@ local NG = {
 	NODE_FOR_EACH_SET_VAR = 12,
 }
 
-function main()
-local graphJson = _G.input or input
+local function compileFlat(graph, importers, context, report)
+local graphJson = "runtime"
 if type(graphJson) ~= "string" or graphJson == "" then
 	error("compile-graph.lua requires graph JSON in _G.input or input")
 end
 
-local graph = json.decode(graphJson)
 if type(graph) ~= "table" then
 	error("compile-graph.lua graph JSON must decode to an array")
 end
 
-local progressSource = _G.ngProgressSource or ngProgressSource or ""
+local progressSource = ""
 if type(progressSource) ~= "string" then
 	error("compile-graph.lua ngProgressSource must be a string")
 end
@@ -137,6 +121,7 @@ local function validateLevel(level, ownerKind)
 	for _, node in ipairs(level) do
 		assertInteger(node.id, nodeLabel(node) .. ".id")
 		assertInteger(node.kind, nodeLabel(node) .. ".kind")
+        if node.kind < 1 or node.kind > 12 then error("unknown node kind " .. tostring(node.kind)) end
 
 		local inputIds = {}
 		for _, inputPort in ipairs(getInputs(node)) do
@@ -329,49 +314,6 @@ local function parseValueNodeLiteral(raw, label)
 	return value
 end
 
-local function bytesToString(bytes)
-	local chars = {}
-	for index, byte in ipairs(bytes) do
-		if type(byte) ~= "number" then
-			error("fs.read output byte " .. tostring(index) .. " must be a number")
-		end
-		chars[index] = string.char(byte)
-	end
-	return table.concat(chars)
-end
-
-local function unwrapFsReadOutput(raw, path)
-	-- The expected PDK shape is raw fs.read bytes as a Lua string. Keep support
-	-- for a wrapped JSON result too, because some host bridges expose plugin
-	-- result envelopes while sync-call plumbing is evolving.
-	local ok, decoded = pcall(json.decode, raw)
-	if not ok or type(decoded) ~= "table" or decoded.returnCode == nil or decoded.output == nil then
-		return raw
-	end
-
-	if tonumber(decoded.returnCode) ~= 0 then
-		error("fs.read failed for " .. path .. ": " .. tostring(decoded.output))
-	end
-
-	if type(decoded.output) == "string" then
-		return decoded.output
-	end
-	if type(decoded.output) == "table" then
-		return bytesToString(decoded.output)
-	end
-
-	error("fs.read returned unsupported output for " .. path)
-end
-
-local function readTextFile(path)
-	if type(path) ~= "string" or path == "" then
-		error("code node is missing codePath")
-	end
-	if type(fs) ~= "table" or type(fs.read_text) ~= "function" then
-		error("compile-graph.lua requires lua.comp fs.read_text(path)")
-	end
-	return fs.read_text(path)
-end
 
 local needed = {}
 local function markNeededNode(nodeId)
@@ -529,42 +471,12 @@ local function emitOutputDeclarations(node)
 end
 
 local function emitProgressHelpers()
-	if progressSource ~= "" then
-		emit(progressSource)
-		emit("")
-	end
-	emit("if type(__ng_progress) ~= \"function\" then")
-	emit("  function __ng_progress(method, nodeId, message)")
-	emit("  end")
-	emit("end")
-	emit("")
-	emit("local function __ng_node_start(nodeId)")
-	emit("  __ng_progress(\"nodeStart\", nodeId)")
-	emit("end")
-	emit("")
-	emit("local function __ng_node_done(nodeId)")
-	emit("  __ng_progress(\"nodeDone\", nodeId)")
-	emit("end")
-	emit("")
-	emit("local function __ng_node_error(nodeId, message)")
-	emit("  __ng_progress(\"nodeError\", nodeId, message)")
-	emit("end")
-	emit("")
-	emit("local function __ng_goal_start(goalId)")
-	emit("  __ng_progress(\"goalStart\", goalId)")
-	emit("end")
-	emit("")
-	emit("local function __ng_goal_done(goalId)")
-	emit("  __ng_progress(\"goalDone\", goalId)")
-	emit("end")
-	emit("")
-	emit("local function __ng_active_value(active, value)")
-	emit("  if active then")
-	emit("    return value")
-	emit("  end")
-	emit("  return nil")
-	emit("end")
-	emit("")
+ emit('local function __ng_node_start(id) __ng_progress("nodeStart", id) end')
+ emit('local function __ng_node_done(id) __ng_progress("nodeDone", id) end')
+ emit('local function __ng_node_error(id, message) __ng_progress("nodeError", id, message) end')
+ emit('local function __ng_goal_start(id) __ng_progress("goalStart", id) end')
+ emit('local function __ng_goal_done(id) __ng_progress("goalDone", id) end')
+ emit('local function __ng_active_value(active, value) if active then return value end end')
 end
 
 local function nodeActiveExpr(node)
@@ -599,7 +511,7 @@ local function emitValueAssignments(node, indent)
 end
 
 local function emitValueNode(node)
-	emit(("-- value node %d: %s"):format(node.id, node.name or ""))
+	emit(("-- value node %d: %s"):format(node.id, ""))
 	emit(("__ng_node_active = %s"):format(nodeActiveExpr(node)))
 	emit("if __ng_node_active then")
 	emit(("  __ng_node_start(%d)"):format(node.id))
@@ -643,15 +555,6 @@ local function emitInputAssignments(node)
 	end
 end
 
-local function emitUserCode(source)
-	for line in tostring(source):gmatch("([^\n]*)\n?") do
-		if line == "" then
-			emit("")
-		else
-			emit("  " .. line)
-		end
-	end
-end
 
 local function emitOutputDefaults(node)
 	for _, outputPort in ipairs(getOutputs(node)) do
@@ -766,23 +669,22 @@ local function emitOutputAssignments(node)
 end
 
 local function emitCodeNode(node)
-	local source = readTextFile(node.codePath)
-
-	emit(("-- code node %d: %s"):format(node.id, node.name or ""))
+		emit(("-- code node %d: %s"):format(node.id, ""))
 	emit(("__ng_node_active = %s"):format(nodeActiveExpr(node)))
 	emit("if __ng_node_active then")
 	emit(("  __ng_node_start(%d)"):format(node.id))
 	emit("  local inputs = { active = {}, names = {} }")
 	emit("  local outputs = { active = {}, names = {} }")
-	emit("  _G.inputs = inputs")
-	emit("  _G.outputs = outputs")
 	emit("  __ng_ok, __ng_err = xpcall(function()")
 	emitInputAssignments(node)
 	emitOutputDefaults(node)
 	emit("")
-	emit("  -- begin user code: " .. node.codePath)
-	emitUserCode(source)
-	emit("  -- end user code")
+
+	emit(("  local module = __ng_importers[%d](%s)"):format(node.id, luaString(node.codePath)))
+ emit('  local run = type(module) == "function" and module or type(module) == "table" and module.run')
+ emit('  if type(run) ~= "function" then error("Code module must return a function or export run(inputs, outputs, context)") end')
+ emit('  run(inputs, outputs, context)')
+
 	emit("")
 	emitOutputAssignments(node)
 	emitCodeNodeErrorHandler(node)
@@ -844,7 +746,7 @@ local function emitForEachNode(node)
 		end
 	end
 
-	emit(("-- for each node %d: %s"):format(node.id, node.name or ""))
+	emit(("-- for each node %d: %s"):format(node.id, ""))
 	emit(("__ng_node_start(%d)"):format(node.id))
 	for _, childNode in ipairs(child) do emitOutputDeclarations(childNode) end
 	emit(("local __ng_each_arrays_%d = {}"):format(node.id))
@@ -1043,7 +945,7 @@ orderNeededNodes()
 emit("-- Generated Lua file")
 emit("-- Do not edit manually")
 emit("")
-emit("function main()")
+emit("return function(context, __ng_importers, __ng_progress)")
 emitProgressHelpers()
 emitValueTypeHelper()
 emitForEachHelpers()
@@ -1068,3 +970,158 @@ emit("end")
 
 return table.concat(lines, "\n")
 end
+
+local function clone(value)
+ if type(value) ~= 'table' or value == json.null then return value end
+ local out = {}
+ for k, v in pairs(value) do out[k] = clone(v) end
+ return out
+end
+
+local function relativePath(base, path)
+ assert(type(path)=='string' and path~='', 'module path must be non-empty')
+ path=path:gsub('\\','/')
+ assert(path:sub(1,1)~='/' and not path:match('^%a:') and not path:find('%z'),'module path must be relative')
+ local parts={}
+ local combined=(base:match('^(.*)/') or '') .. '/' .. path
+ for part in combined:gmatch('[^/]+') do
+  if part=='..' then assert(#parts>0,'module path escapes Project'); parts[#parts]=nil
+  elseif part~='.' then parts[#parts+1]=part end
+ end
+ assert(#parts>0,'module path must identify a file')
+ return table.concat(parts,'/')
+end
+
+local function flatten(graph, rootImport, rootPath)
+ local nextId, contextId = 0, 0
+ local function maximum(level)
+  for _, node in ipairs(level) do
+   nextId = math.max(nextId, node.id)
+   if node.childGraph then maximum(node.childGraph) end
+  end
+ end
+ maximum(graph)
+ local records, aliases, ids, kinds, states, locations, importers = {}, {}, {}, {}, {}, {}, {}
+ local function key(ctx, id, port) return ctx .. ':' .. id .. (port and ':' .. port or '') end
+ local function fresh() nextId = nextId + 1; return nextId end
+ local add
+ add = function(level, ctx, owner, path, stack, destination)
+  for _, raw in ipairs(level) do
+   local node = clone(raw)
+   local k = node.kind
+   if k == 5 and owner and owner.node.kind == 3 then
+    local input
+    for _, p in ipairs(owner.node.inputs) do if p.id == node.id then input = p end end
+    assert(input, 'Group missing Graph Input ' .. node.id)
+    aliases[key(ctx.id,node.id,node.outputs[1].id)] = input.srcNodeId ~= 0 and {ctx=owner.ctx.id,id=input.srcNodeId,port=input.srcOutputId} or false
+   elseif k == 6 and owner and owner.node.kind == 3 then
+    local p = node.inputs[1]
+    aliases[key(owner.ctx.id,owner.node.id,node.id)] = p.srcNodeId ~= 0 and {ctx=ctx.id,id=p.srcNodeId,port=p.srcOutputId} or false
+   elseif k == 3 then
+    local childPath = clone(path); childPath[#childPath+1] = node.id
+    local storage = node.storage or {mode='inline'}
+    if storage.mode == 'inline' then
+     assert(type(node.childGraph)=='table','inline Group requires childGraph')
+     add(node.childGraph,ctx,{node=node,ctx=ctx},childPath,stack,destination)
+    elseif storage.mode == 'linked' then
+     assert(type(storage.path)=='string' and storage.path~='', 'linked Group requires path')
+     -- Import resolves relative to the module whose closure owns this call.
+     local canonicalPath=relativePath(ctx.documentPath or "",storage.path)
+     local module = ctx.import(storage.path)
+     assert(type(module)=='table' and type(module.ng_graph_json)=='function' and type(module.ng_graph_import)=='function', 'linked Group must be an executable .ng.lua module')
+     assert(not stack[canonicalPath], 'linked Group alias cycle: ' .. storage.path)
+     stack[canonicalPath] = true
+     local child = json.decode(module.ng_graph_json())
+     if child.format then
+      assert(child.format=='gams-group-graph' and child.version==1,'invalid Group document envelope')
+      child = child.nodes
+     end
+     maximum(child)
+     contextId = contextId + 1
+     local childContext = {id=contextId, linked=true, import=module.ng_graph_import, documentPath=canonicalPath}
+     add(child,childContext,{node=node,ctx=ctx},childPath,stack,destination)
+     stack[canonicalPath] = nil
+    else error('unknown Group storage mode: ' .. tostring(storage.mode)) end
+   else
+    local id = ctx.linked and fresh() or node.id
+    local sourceKey = key(ctx.id,node.id)
+    assert(not ids[sourceKey], 'duplicate node id: ' .. node.id)
+    ids[sourceKey], kinds[sourceKey] = id,k
+    if k == 7 then for _, p in ipairs(node.outputs) do if p.stateNodeId then states[key(ctx.id,node.id,p.id)] = ctx.linked and fresh() or p.id end end end
+    local record = {node=node,ctx=ctx,id=id}
+    destination[#destination+1] = record
+    locations[id] = {executionNodeId=id,sourceNodeId=node.id,documentPath=ctx.documentPath or json.null,groupPath=clone(path)}
+    importers[id] = ctx.import
+    if k == 7 then
+     record.children = {}
+     local childPath=clone(path); childPath[#childPath+1]=node.id
+     add(node.childGraph,ctx,{node=node,ctx=ctx},childPath,stack,record.children)
+    end
+   end
+  end
+ end
+ add(graph,{id=0,import=rootImport,documentPath=rootPath},nil,{}, rootPath and {[rootPath]=true} or {},records)
+ local function materialize(level)
+  local out={}
+  for _,r in ipairs(level) do
+   local n,ctx=r.node,r.ctx
+   local original=n.id
+   n.id=r.id
+   for _,p in ipairs(n.inputs) do if p.srcNodeId ~= 0 then
+    local source={ctx=ctx.id,id=p.srcNodeId,port=p.srcOutputId}; local seen={}
+    while source and aliases[key(source.ctx,source.id,source.port)] ~= nil do
+     local k=key(source.ctx,source.id,source.port)
+     assert(not seen[k], 'Group boundary alias cycle'); seen[k]=true; source=aliases[k]
+    end
+    if not source then p.srcNodeId,p.srcOutputId=0,0
+    else
+     p.srcNodeId=assert(ids[key(source.ctx,source.id)],'input references missing executable node ' .. source.id)
+     p.srcOutputId=kinds[key(source.ctx,source.id)]==7 and (states[key(source.ctx,source.id,source.port)] or ids[key(source.ctx,source.port)]) or source.port
+     assert(p.srcOutputId,'missing For Each output')
+    end
+   end end
+   if r.children then
+    n.childGraph=materialize(r.children)
+    for _,p in ipairs(n.inputs) do p.id=assert(ids[key(ctx.id,p.id)],'missing For Each input') end
+    for _,p in ipairs(n.outputs) do
+     if p.stateNodeId then
+      p.id=assert(states[key(ctx.id,original,p.id)],'missing state output')
+      p.stateNodeId=assert(ids[key(ctx.id,p.stateNodeId)],'missing GetVar')
+     else p.id=assert(ids[key(ctx.id,p.id)],'missing Graph Output') end
+    end
+   end
+   out[#out+1]=n
+  end
+  return out
+ end
+ return materialize(records),importers,locations
+end
+
+local function prepare(graphJson, importer, sourcePath)
+ local document=json.decode(graphJson)
+ local graph=document
+ if document.format then
+  assert(document.format=='gams-group-graph' and document.version==1,'invalid Group document envelope')
+  graph=document.nodes
+ end
+ return flatten(graph,importer,sourcePath)
+end
+
+local function execute(graphJson, context, importer, sourcePath)
+ context = context or {}
+ assert(type(context)=='table', 'main context must be a table')
+ assert((context.pluginId==nil)==(context.runId==nil),'pluginId and runId must be provided together')
+ local nodes,importers,locations=prepare(graphJson,importer,sourcePath)
+ local function report(method,id,message)
+  if context.pluginId then
+   host.call(context.pluginId .. '.' .. method,{runId=context.runId,nodeId=id,message=message,location=locations[id]})
+  end
+ end
+ local source=compileFlat(nodes,importers,context,report)
+ local fn=assert(load(source,'@node-graph-execution','t',_ENV))()
+ return fn(context,importers,report)
+end
+
+
+function main(context) return execute(__ng_original_json, context, ng_graph_import, __ng_source_path) end
+return {main=main, ng_graph_json=ng_graph_json, ng_graph_import=ng_graph_import}

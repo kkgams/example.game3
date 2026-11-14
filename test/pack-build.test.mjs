@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { buildPack, encodePack } from '../content/gams/pack.mjs';
+import { buildPack, encodePack, readGraphDocument } from '../content/gams/pack.mjs';
 import { embedPack } from '../content/gams/embed.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,9 +20,12 @@ async function fixture(t) {
   return path;
 }
 async function changeJSON(root, path, change) {
-  const full = join(root, path), value = await readJSON(full);
+  const full = join(root, path), source = await readFile(full, 'utf8');
+  const value = path.endsWith('.ng.lua') ? readGraphDocument(source) : JSON.parse(source);
   change(value);
-  await writeFile(full, JSON.stringify(value));
+  await writeFile(full, path.endsWith('.ng.lua')
+    ? source.replace(/^local __ng_original_json = .*$/m, () => 'local __ng_original_json = ' + JSON.stringify(JSON.stringify(value)))
+    : JSON.stringify(value));
 }
 
 test('portable pack is deterministic RSPK v1 with one pattern vector', () => {
@@ -52,7 +55,7 @@ test('isolated graph build and both CLIs need only Node', async t => {
   assert.deepEqual(await readFile(result.output), encodePack(schema, patterns));
   // This is how the released editor persists an edited Value node: output
   // labels become empty; topology/IDs and literal values are unchanged.
-  await changeJSON(path, 'content/gams/graphs/bulletml.ng.json', graph => {
+  await changeJSON(path, 'content/gams/graphs/bulletml.ng.lua', graph => {
     for (const node of graph.filter(node => node.kind === 4)) {
       node.x += 10; node.name += ' edited';
       for (const port of node.outputs) port.name = '';
@@ -142,7 +145,7 @@ test('unsupported/ambiguous schema is rejected even in unused definitions', () =
 
 test('graph changes and transformed/customized Lua are not silently interpreted', async t => {
   const path = await fixture(t);
-  const graphPath = 'content/gams/graphs/bulletml.ng.json';
+  const graphPath = 'content/gams/graphs/bulletml.ng.lua';
   for (const change of [g => g.push(g[0]), g => { g[1].inputs[0].srcNodeId = 3; }, g => { g[1].codePath = 'custom.lua'; }, g => { g[0].outputs[0].value = 'transform(paths)'; }, g => { g[2].outputs[1].value = '"../escape.rspk"'; }, g => { g[2].outputs[1].value = '"build.nosync/other.rspk"'; }, g => { g[0].outputs[0].value = '["../escape.json"]'; }, g => { g[2].outputs[0].value = '"other.json"'; }, g => { g[0].id = 2; }, g => { g[4].transform = 'custom'; }, g => { g[0].outputs[0].value = JSON.stringify([...sourcePaths].reverse()); }, g => { g[0].outputs[0].value = JSON.stringify([sourcePaths[0], sourcePaths[0]]); }]) {
     await cp(join(root, graphPath), join(path, graphPath));
     await changeJSON(path, graphPath, change);

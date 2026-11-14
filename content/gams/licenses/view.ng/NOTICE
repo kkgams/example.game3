@@ -1,0 +1,20 @@
+GAMS Project Unit: view.ng
+GAMS-authored code is licensed under Apache-2.0 by owner authorization.
+
+Bounded engineering inventory (not a perfect ownership/provenance assertion):
+- src/views/view-ng.js
+- src/views/view-ng-node.js (node editor moved from view.ng-node)
+- src/views/ng-document.js
+- presets/ (GAMS demo node modules)
+- src/lua/compile-graph.lua (modified graph evaluator from example.game1)
+
+The node editor originated in the kkgams/view.ng-node repository. Its
+GAMS-authored code retains its Apache-2.0 licensing and attribution above.
+The Lua graph evaluator is adapted and modified from the owner-controlled
+example.game1/ng/compile-graph.lua, also licensed under Apache-2.0. This does
+not include or relicense that Project's third-party game/runtime materials.
+
+No npm dependencies are vendored. Absolute /core/, /util/, /widgets/ libraries
+are supplied separately by the Host and excluded from this ZIP. Textual icon
+ligatures and system font-family names do not bundle icon/font files.
+Sibling Project Units and their licensing remain separate.

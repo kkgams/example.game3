@@ -106,9 +106,19 @@ export function encodePack(schema, patterns) {
   return Buffer.concat([header, payload]);
 }
 
+// Read the View compiler's embedded JSON without evaluating Lua in Node.
+export function readGraphDocument(source) {
+  const match = source.match(/^local __ng_original_json = ("(?:[^"\\]|\\.)*")$/m);
+  check(match, 'expected view.ng executable document metadata');
+  check(!/\\[0-9]|\\\n/.test(match[1]), 'unsupported graph metadata escape; save compact metadata');
+  const graph = JSON.parse(JSON.parse(match[1]));
+  check(Array.isArray(graph), 'graph metadata must contain nodes');
+  return graph;
+}
+
 const nodeScripts = {
-  'content/gams/nodes/bulletml-slots-json.lua': '4b909de6d32663a5840347e243925159b26d8c44de1ca3468d09181908e06bba',
-  'content/gams/nodes/build-bulletml-respack.lua': '1bc2ed5254dc286dc8d1605ac3fa1ffe297f78fef80d428f81c560eb9d29ff4d',
+  'content/gams/nodes/bulletml-slots-json.lua': '44045f8e6d28562ef98bf8233542e63d805d361094f97ddc5eaad62b449e4f26',
+  'content/gams/nodes/build-bulletml-respack.lua': 'c835b66507f740fd4bbb6b3ec543c36c39774b36e80d73154a6f9ff406d99da5',
 };
 const port = (id, name, srcNodeId, srcOutputId) => ({ id, name, srcNodeId, srcOutputId });
 const out = name => [{ id: 1, name, value: null }];
@@ -117,7 +127,8 @@ const out = name => [{ id: 1, name, value: null }];
 export async function readPackConfig({ root = process.cwd(), output } = {}) {
   root = resolve(root);
   const json = async path => JSON.parse(await readFile(resolve(root, path), 'utf8'));
-  const graph = await json('content/gams/graphs/bulletml.ng.json');
+  const graph = readGraphDocument(await readFile(resolve(root, 'content/gams/graphs/bulletml.ng.lua'), 'utf8'));
+  for (const node of graph) if (node.codePath) node.codePath = resolve(root, 'content/gams/graphs', node.codePath).slice(root.length + 1).replaceAll('\\', '/');
   check(Array.isArray(graph) && graph.length === 5, 'unsupported graph topology');
   const expected = [
     { id: 1, kind: 4, inputs: [], outputs: [{ id: 1, name: 'paths' }] },

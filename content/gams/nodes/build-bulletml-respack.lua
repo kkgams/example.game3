@@ -1,3 +1,4 @@
+return function(inputs, outputs, context)
 local schemaPath, slotsJson, outputPath = inputs[1], inputs[2], inputs[3]
 assert(type(schemaPath) == "string" and schemaPath ~= "", "schemaPath is required")
 assert(type(slotsJson) == "string" and slotsJson ~= "", "slotsJson is required")
@@ -29,3 +30,5 @@ local schema = host.call("fs/fs::read-text", schemaPath)
 local bytes = host.call("respack/respack::build-to-file", schema, slotsJson, outputPath)
 assert(type(bytes) == "number" and bytes > 16, "respack build returned an empty package")
 outputs[1] = outputPath
+
+end

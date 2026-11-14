@@ -1,25 +1,43 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 
-// Mirrors the Host's documented direct-file URL cache naming, not an installer.
-// Open the Project in GAMS first to install these explicitly configured Units.
-export function componentPaths(config, modulesDir) {
+// Paths come only from a completed native Host preparation, never cache internals.
+export function componentPaths(config, snapshot) {
+  assert.deepEqual(snapshot.sourcePlugins, config.plugins, 'prepared snapshot is stale: sourcePlugins differ from gams.json; prepare and export again')
+  const prepared = snapshot.config
+  assert.ok(prepared && typeof prepared === 'object', 'prepared snapshot must contain config')
   assert.ok(Array.isArray(config.plugins), 'gams.json plugins must be an array')
+  assert.ok(Array.isArray(prepared.plugins) && prepared.plugins.length === config.plugins.length,
+    'prepared config must contain the same plugin list as gams.json')
   return ['plugin.fs', 'plugin.lua', 'plugin.respack'].map(name => {
-    const sources = config.plugins.filter(source => new URL(source).pathname.endsWith(`/${name}.wasm`))
-    assert.equal(sources.length, 1, `gams.json must configure exactly one ${name}.wasm`)
-    const source = sources[0], url = new URL(source)
-    assert.equal(url.protocol, 'https:', 'content build expects direct HTTPS Unit URLs')
-    assert.equal(url.hash, '', 'content build expects direct WASM files, not archives')
-    return join(modulesDir, `${createHash('sha256').update(source).digest('hex')}.wasm`)
+    const indexes = config.plugins.flatMap((source, index) => {
+      const resource = typeof source === 'object' && source !== null ? source.$file : source
+      return typeof resource === 'string' && resource.endsWith(`/${name}.wasm`) ? [index] : []
+    })
+    assert.equal(indexes.length, 1, `gams.json must configure exactly one ${name}.wasm`)
+    const path = prepared.plugins[indexes[0]]
+    assert.ok(typeof path === 'string' && path.length > 0 && !isAbsolute(path) &&
+      !path.includes('\\') && !path.includes(':') && !path.includes('\0') &&
+      path.split('/').every(part => part !== '' && part !== '.' && part !== '..'),
+      'prepared plugin must be a Project-relative guest path; export runtime.config after runtime.ready')
+    return path
+  })
+}
+
+export function replResults(stdout, count) {
+  const responses = stdout.trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(responses.length, count, 'GAMS REPL returned an unexpected response count')
+  return responses.map(response => {
+    assert.equal(response.error, undefined, `GAMS REPL failed: ${JSON.stringify(response.error)}`)
+    assert.ok(Object.hasOwn(response, 'ok'), 'GAMS REPL response must contain ok')
+    return response.ok
   })
 }
 
@@ -46,30 +64,36 @@ export async function buildContent() {
     assert.ok(process.env.GAMS_MODULES_DIR && isAbsolute(process.env.GAMS_MODULES_DIR), 'GAMS_MODULES_DIR must be non-empty and absolute')
     modulesDir = process.env.GAMS_MODULES_DIR
   }
+  assert.ok(process.env.GAMS_PREPARED_CONFIG && isAbsolute(process.env.GAMS_PREPARED_CONFIG),
+    'GAMS_PREPARED_CONFIG must name an absolute JSON snapshot of runtime.config from a completed native Host prepare; REPL does not prepare Projects')
   const config = JSON.parse(await readFile(join(root,'gams.json'),'utf8'))
-  const plugins = componentPaths(config, modulesDir)
-  for (const path of plugins) await access(path).catch(() => {
-    throw new Error(`Missing configured component: ${path}; reopen this Project in GAMS to install its Units`)
-  })
+  const snapshot = JSON.parse(await readFile(process.env.GAMS_PREPARED_CONFIG,'utf8'))
+  assert.equal(snapshot.modulesDir, modulesDir, 'GAMS_MODULES_DIR must equal the exported runtime.modulesDir')
+  const plugins = componentPaths(config, snapshot)
+  const localPlugins = plugins.map(path => path.startsWith('gams_modules/') ? join(modulesDir, path.slice('gams_modules/'.length)) : join(root, path))
+  for (const local of localPlugins) {
+    await access(local).catch(() => {
+      throw new Error(`Missing prepared component: ${local}; reopen this Project in GAMS and export runtime.config with its actual runtime.modulesDir`)
+    })
+  }
   const outputDir = join(root,'build.nosync/content')
   await mkdir(outputDir,{recursive:true})
-  const graph = await readFile(join(root,'content/gams/graphs/bulletml.ng.json'),'utf8')
-  const entry = await readFile(join(root,'ng/compile-graph.lua'),'utf8')
-  function invoke(source) {
-    const result = spawnSync(host, ['run', ...plugins.flatMap(path => ['--plug',path]), 'lua/lua::run', JSON.stringify([source])], {
-      cwd:root, encoding:'utf8', timeout:120000, maxBuffer:16*1024*1024,
-      env:{...process.env,GAMS_APP_CWD:root,GAMS_WASMTIME_CACHE_DIR:join(root,'build.nosync/wasmtime-cache-content')},
-    })
-    assert.ifError(result.error)
-    assert.equal(result.status,0,`GAMS CLI failed: ${result.stderr}\n${result.stdout}`)
-    const response = JSON.parse(result.stdout)
-    assert.equal(response.err,undefined,`GAMS Lua failed: ${response.err}`)
-    assert.equal(typeof response.ok,'string','GAMS Lua must return a string')
-    return response.ok
-  }
-  const generated = invoke(`_G.input = ${JSON.stringify(graph)}\n${entry}`)
-  await writeFile(join(outputDir,'bulletml.generated.lua'),generated)
-  const goals = JSON.parse(invoke(generated))
+  const graphPath = 'content/gams/graphs/bulletml.ng.lua'
+  const source = await readFile(join(root, graphPath),'utf8')
+  const calls = [
+    `gams/host::load-plugins ${JSON.stringify(localPlugins)}`,
+    `lua/lua::run ${[source, 'main', '[]', graphPath].map(value => JSON.stringify(value)).join(' ')}`,
+  ]
+  const result = spawnSync(host, ['--runtime', 'repl', '--format=json', '--project-dir', root], {
+    input: calls.join('\n') + '\n', cwd:root, encoding:'utf8', timeout:120000, maxBuffer:16*1024*1024,
+    env:{...process.env,GAMS_APP_CWD:root,GAMS_MODULES_DIR:modulesDir,GAMS_WASMTIME_CACHE_DIR:join(root,'build.nosync/wasmtime-cache-content')},
+  })
+  assert.ifError(result.error)
+  assert.equal(result.status,0,`GAMS REPL failed: ${result.stderr}\n${result.stdout}`)
+  const [, response] = replResults(result.stdout, 2)
+  assert.equal(response.err,undefined,`GAMS Lua failed: ${response.err}`)
+  assert.equal(typeof response.ok,'string','GAMS Lua must return a string')
+  const goals = JSON.parse(response.ok)
   assert.equal(Object.keys(goals).length,1,'content graph must produce one explicit pack goal')
   const goal = Object.values(goals)[0]
   assert.equal(goal.active.path,true,'pack goal path must be active')

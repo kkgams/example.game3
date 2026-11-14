@@ -8,7 +8,7 @@ Original input hashes (before any adaptation):
 | Original path | SHA-256 | Use |
 | --- | --- | --- |
 | `examples/demo/gams.json` | `f33cacf1b7e2535ec7e747ccda40f000fe3b04e5f96f282bcb040452d84ea28a` | Relevant BulletML/Nodegraph configuration reference only; full config not copied |
-| `examples/demo/ng/compile-graph.lua` | `660a93647fd3e17331488b921ac176179ffd7db14c552e278450875f3d34bc32` | Copied unchanged to `content/gams/compile-graph.lua` |
+| `examples/demo/ng/compile-graph.lua` | `660a93647fd3e17331488b921ac176179ffd7db14c552e278450875f3d34bc32` | Historically copied unchanged to `content/gams/compile-graph.lua`; retired during the executable-document migration |
 | `examples/demo/ng/presets/bulletml-slots-json.lua` | `ebc5f3f01d12c16a147b45e0db0f36b8316e545f50b174304095d3d27631b6b5` | Adapted into the focused slots node: explicit content paths, dense-array/document checks and fail-loud errors |
 | `examples/demo/CYBERPUNK/bullet.rspk.json` | `3082e5b2dac43a79263f0689a00b20211abde5144dbbaa9244801c4a3b63b9e3` | Copied unchanged as the resource schema |
 | `examples/demo/bulletML-json/mini/aim.bulletml.json` | `d3dd37ebbfaf1f40b1561f1e0161f6b31014715d5482847a6e8b81ae3d74cb86` | Adapted example with explicit aim/speed on Fire, avoiding preview/schema default ambiguity |
@@ -40,3 +40,11 @@ arena JSON transcribes game3's original procedural border/central block exactly;
 the larger world is new placeholder collision geometry, not imported artwork or
 an external map format. No new third-party assets, dependencies, sibling code or
 historical input hash changes were introduced.
+
+The executable-document migration retains these historical input hashes unchanged.
+The two node bodies are wrapped as module-returned functions without changing
+behavior. The legacy compiler and forwarder are removed. The authored graph was
+converted once using the compiler from published view.ng v0.3.0; v0.3.1 has the
+identical compiler. Its normal generated execution runtime is embedded in
+`gams/graphs/bulletml.ng.lua`, with distributed Apache-2.0 LICENSE/NOTICE retained
+under `gams/licenses/view.ng/`. No sibling compiler source or installer is vendored.

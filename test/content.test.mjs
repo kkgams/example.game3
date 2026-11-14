@@ -1,19 +1,20 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { componentPaths, verifyPack } from '../content/gams/build.mjs'
+import { readGraphDocument } from '../content/gams/pack.mjs'
+import { componentPaths, verifyPack, replResults } from '../content/gams/build.mjs'
 
 // Node + this checkout only: no installed Units, Lua, Host, siblings or network.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const read = name => readFile(path.join(root, name), 'utf8')
 const json = async name => JSON.parse(await read(name))
 const config = await json('gams.json')
-const graph = await json('content/gams/graphs/bulletml.ng.json')
+const graph = readGraphDocument(await read('content/gams/graphs/bulletml.ng.lua'))
+for (const node of graph) if (node.codePath) node.codePath = path.posix.normalize('content/gams/graphs/' + node.codePath)
 const patterns = ['ranger-fan', 'aim'].map(name => `content/bulletml/${name}.bulletml.json`)
 function localPath(name, prefix = 'content/') {
   assert.equal(typeof name, 'string')
@@ -42,22 +43,24 @@ function uniqueIds(items, label) {
 
 test('Project authoring plugins, Views and source selectors are explicit and release-pinned', () => {
   const pluginNames = config.plugins.map(source => {
-    const url = new URL(source)
+    const url = new URL(typeof source.$file === 'string' ? source.$file : source.$file.url)
     assert.equal(url.protocol, 'https:'); assert.equal(url.hostname, 'github.com'); assert.equal(url.hash, '')
     assert.match(url.pathname, /^\/kkgams\/plugin\.[\w-]+\/releases\/download\/v\d+\.\d+\.\d+\/plugin\.[\w-]+\.wasm$/)
     return path.posix.basename(url.pathname, '.wasm')
   })
   for (const id of ['plugin.fs', 'plugin.layout', 'plugin.lua', 'plugin.respack']) assert.ok(pluginNames.includes(id), id)
   assert.equal(new Set(pluginNames).size, pluginNames.length)
+  assert.equal(pluginNames.filter(name => name === 'plugin.fs').length, 1)
+  assert.equal(Object.keys(config.ui.services).length, 6)
   for (const id of ['view-files', 'view-code', 'view-bullet', 'view-ng', 'view-ng-node', 'files-rename', 'files-default']) {
     assert.ok(config.ui.views[id], id)
     assert.equal(typeof config.ui.views[id].internal, 'boolean', id)
   }
   for (const { url: source } of [config.ui.theme, ...Object.values(config.ui.services), ...Object.values(config.ui.views)]) {
-    const url = new URL(source)
+    const url = new URL(typeof source.$file === 'string' ? source.$file : source.$file.url)
     assert.equal(url.protocol, 'https:'); assert.equal(url.hostname, 'github.com')
     assert.match(url.pathname, /^\/kkgams\/[^/]+\/releases\/download\/v\d+\.\d+\.\d+\/[^/]+\.zip$/)
-    assert.match(url.hash, /^#(?:views|ui-plugins|themes)\/[\w.-]+\.(?:js|css)$/)
+    assert.match(source.$file.entry, /^(?:views|ui-plugins|themes)\/[\w.-]+\.(?:js|css)$/)
   }
 })
 
@@ -67,7 +70,7 @@ test('Bullet defaultSource and layout data-source files exist', async () => {
   const layout = config.ui.services['ui-layout'].config.layout
   const sources = [...layout.matchAll(/data-source="([^"]+)"/g)].map(match => match[1])
   assert.ok(sources.includes(source))
-  assert.ok(sources.includes('content/gams/graphs/bulletml.ng.json'))
+  assert.ok(sources.includes('content/gams/graphs/bulletml.ng.lua'))
   for (const name of sources) await localFile(name)
 })
 
@@ -75,7 +78,7 @@ test('Files routes exact basenames before last extensions, not compound suffixes
   const routes = config.ui.views['view-files'].config.open
   const route = name => routes[path.posix.basename(name)] || routes[path.posix.extname(name).slice(1).toLowerCase()] || routes.default
   for (const source of patterns) assert.equal(route(source), 'view-bullet')
-  assert.equal(route('content/gams/graphs/bulletml.ng.json'), 'view-ng')
+  assert.equal(route('content/gams/graphs/bulletml.ng.lua'), 'view-ng')
   for (const source of ['schema/bulletml.rspk.json', 'other.bulletml.json', 'other.ng.json', 'nodes/code.lua', 'build.mjs', 'README.md']) assert.equal(route(source), 'view-code', source)
   assert.equal(route('unknown.bin'), 'files-default')
   for (const target of Object.values(routes)) assert.ok(config.ui.views[target], target)
@@ -219,32 +222,33 @@ test('content contains authored inputs, not generated packs/Odin or game/source 
   await walk('content')
 })
 
-test('released View shim loads the canonical Project-owned compiler', async () => {
-  const shim = await read('ng/compile-graph.lua')
-  await localFile('content/gams/compile-graph.lua')
-  assert.match(shim, /local\s+path\s*=\s*"content\/gams\/compile-graph\.lua"/)
-  assert.match(shim, /host\.call\("fs\/fs::read-text",\s*path\)/)
-  assert.match(shim, /load\(source,\s*"@"\s*\.\.\s*path,\s*"t",\s*_ENV\)/)
-  assert.match(shim, /chunk\(\)/); assert.doesNotMatch(shim, /function\s+main\s*\(/)
-  assert.match(await read('content/gams/compile-graph.lua'), /function\s+main\s*\(/)
+test('graph is a View-owned executable Lua document, without a Project compiler', async () => {
+  const source = await read('content/gams/graphs/bulletml.ng.lua')
+  for (const entry of ['main', 'ng_graph_json', 'ng_graph_import']) assert.match(source, new RegExp(`function ${entry}\\(`))
+  for (const name of ['ng/compile-graph.lua', 'content/gams/compile-graph.lua'])
+    await assert.rejects(stat(path.join(root, name)), /ENOENT/)
 })
 
-test('componentPaths reproduces SHA256 URL cache names without installed modules', () => {
-  const modules = path.join(tmpdir(), 'not-installed-content-components')
-  const sources = ['plugin.fs', 'plugin.lua', 'plugin.respack'].map(name => config.plugins.find(source => new URL(source).pathname.endsWith(`/${name}.wasm`)))
-  assert.deepEqual(componentPaths(config, modules), sources.map(source => path.join(modules, `${createHash('sha256').update(source).digest('hex')}.wasm`)))
-  assert.deepEqual(componentPaths({ ...config, plugins: [...config.plugins].reverse() }, modules), componentPaths(config, modules))
+const prepared = {sourcePlugins: config.plugins, config: { plugins: config.plugins.map((_, index) => `gams_modules/resource-${index}/component.wasm`) }}
+test('componentPaths consumes native-prepared guest paths, independent of cache naming', () => {
+  assert.deepEqual(componentPaths(config, prepared), [prepared.config.plugins[0], prepared.config.plugins[2], prepared.config.plugins[3]])
+  const local = structuredClone(prepared); local.config.plugins[0] = 'plugins/fs.wasm'
+  assert.equal(componentPaths(config, local)[0], 'plugins/fs.wasm')
 })
 
-test('componentPaths rejects missing, ambiguous and malformed required sources', () => {
-  const source = config.plugins.find(source => source.endsWith('/plugin.fs.wasm'))
-  const replace = value => ({ plugins: config.plugins.map(item => item === source ? value : item) })
-  for (const invalid of [
-    {}, { plugins: null }, { plugins: [] }, { plugins: config.plugins.filter(item => item !== source) },
-    { plugins: [...config.plugins, source] }, { plugins: [...config.plugins, source.replace('/v0.2.0/', '/v9.9.9/')] },
-    replace('not a URL'), replace(null), replace({ url: source }), replace(source.replace('https:', 'http:')),
-    replace(`${source}#member`), replace(source.replace('.wasm', '.zip#plugin.fs.wasm')),
-  ]) assert.throws(() => componentPaths(invalid, '/unused/modules'))
+test('componentPaths rejects unresolved, missing, ambiguous and unsafe prepared paths', () => {
+  for (const value of [{}, config, {sourcePlugins: []}, {...prepared, sourcePlugins: config.plugins.slice(1)}, {sourcePlugins: config.plugins, config: {plugins: []}}]) assert.throws(() => componentPaths(config, value))
+  for (const value of ['', '/absolute.wasm', '../outside.wasm', 'https://example.com/fs.wasm', 'gams_modules/../bad.wasm', 'bad\\path']) {
+    const bad = structuredClone(prepared); bad.config.plugins[0] = value
+    assert.throws(() => componentPaths(config, bad))
+  }
+  assert.throws(() => componentPaths({ plugins: [...config.plugins, config.plugins[0]] }, {sourcePlugins: [...config.plugins, config.plugins[0]], config: {plugins: [...prepared.config.plugins, prepared.config.plugins[0]]}}))
+})
+
+test('REPL results preserve call ordering and fail on protocol/Host errors', () => {
+  assert.deepEqual(replResults('{"ok":[]}\n{"ok":{"ok":"result"}}\n', 2), [[], {ok:'result'}])
+  for (const output of ['not JSON', '{"ok":[]}\n', '{"ok":[]}\n{"error":{"message":"bad call"}}', '{"ok":[]}\n{}'])
+    assert.throws(() => replResults(output, 2))
 })
 
 function minimalPack() {
@@ -275,10 +279,10 @@ test('verifyPack rejects bad header/version/slot count/bounds and empty pattern 
 test('buildContent diagnoses missing Host/components using isolated temporary paths', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'game3-content-test-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
-  function run(host, modules) {
+  function run(host, modules, snapshot = '') {
     const result = spawnSync(process.execPath, ['content/gams/build.mjs'], {
       cwd: root, encoding: 'utf8', timeout: 10000,
-      env: { ...process.env, GAMS_HOST_BIN: host, GAMS_MODULES_DIR: modules },
+      env: { ...process.env, GAMS_HOST_BIN: host, GAMS_MODULES_DIR: modules, GAMS_PREPARED_CONFIG: snapshot },
     })
     assert.ifError(result.error); assert.notEqual(result.status, 0)
     return result.stderr
@@ -286,10 +290,12 @@ test('buildContent diagnoses missing Host/components using isolated temporary pa
   const modules = path.join(directory, 'missing-modules'), host = path.join(directory, 'missing-host')
   const hostError = run(host, modules)
   assert.ok(hostError.includes(`Missing GAMS Host: ${host}`)); assert.match(hostError, /GAMS_HOST_BIN/)
-  // Node is executable but never invoked as a Host: missing components must
-  // fail first, without reading or writing the user's gams_modules/config.
-  const componentError = run(process.execPath, modules)
-  assert.ok(componentError.includes(`Missing configured component: ${componentPaths(config, modules)[0]}`))
-  assert.match(componentError, /reopen this Project in GAMS/)
+  assert.match(run(process.execPath, modules), /GAMS_PREPARED_CONFIG must name an absolute JSON snapshot/)
+  const exported = path.join(directory, 'prepared.json')
+  await writeFile(exported, JSON.stringify({...prepared, modulesDir: modules}))
+  assert.match(run(process.execPath, modules, exported), /Missing prepared component:/)
+  assert.match(run(process.execPath, directory, exported), /GAMS_MODULES_DIR must equal/)
+  await writeFile(exported, JSON.stringify({...prepared, sourcePlugins: [], modulesDir: modules}))
+  assert.match(run(process.execPath, modules, exported), /prepared snapshot is stale/)
   for (const invalid of ['', 'relative/modules']) assert.match(run(process.execPath, invalid), /GAMS_MODULES_DIR must be non-empty and absolute/)
 })

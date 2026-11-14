@@ -1,3 +1,4 @@
+return function(inputs, outputs, context)
 -- Adapted from the demo's bulletml-slots-json.lua; see content/PROVENANCE.md.
 local paths = inputs[1]
 assert(type(paths) == "table" and #paths > 0, "paths must be a non-empty array")
@@ -23,3 +24,5 @@ end
 -- One slot containing a vector of patterns. Keep original JSON bytes so empty
 -- objects/arrays are not changed by a Lua table decode/encode round trip.
 outputs[1] = "[[" .. table.concat(patterns, ",") .. "]]"
+
+end
