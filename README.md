@@ -141,7 +141,7 @@ Requires macOS Apple Silicon and `unzip`. Fetches pinned v3.2.0 release metadata
 extracts the macOS ARM64 app and installs it at `tools/gams.app`. Existing apps
 are untouched; use an explicit `GAMS_HOST_BIN` override to test a compatible Host. Temporary
 archives/extraction stay under `build.nosync/` and are cleaned on success/failure.
-`make clean` preserves the installed app and `tools/gams-release-notices/`. No app launch or Host integration is
+`make clean` removes the installed app and `tools/gams-release-notices/`. No app launch or Host integration is
 performed, and standalone builds do not require this target.
 
 ## Dependencies and shaders
@@ -177,7 +177,7 @@ Invalid shaders stop the build; no stale-header fallback. Generated headers
 omit machine-specific command lines to keep output reproducible.
 
 Keep `game/vendor/*.h`, `game/**/*.glsl` and `game/**/*.glsl.h` in version control. Keep `tools/` and `build.nosync/` ignored. `make clean` removes
-build output and shader depfiles, preserving downloaded tools and generated shader
+build output, shader depfiles and downloaded tools, preserving generated shader
 headers. The next build regenerates missing depfiles to restore include tracking.
 
 ## Movement
@@ -487,3 +487,13 @@ The pack remains two patterns/344 bytes. Real Host and portable outputs match
 exactly, including isolated spread/delay/speed edits consumed by native and WASM
 simulation. Pinned Nix Zig 0.17.1 builds `make native` and passes `make test`.
 Earlier GUI/renderer evidence above is historical, not a new visual check.
+
+## Clean disposable files
+
+`make clean` removes the complete `build.nosync/` and `tools/` directories,
+including unmarked downloads and caches. The entire `gams_modules/` directory is retained
+because it contains tracked Unit files.
+All deletion targets are checked for tracked files and symlinks before anything
+is removed; either causes clean to fail without deleting other targets. Authored
+sources, assets and data outside these disposable paths are preserved. Do not put
+required inputs in disposable directories. Requires Python 3 and Git.

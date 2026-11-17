@@ -211,7 +211,7 @@ again, then review and test the new snapshot; fetching one header may mix upstre
 versions. Downloads use temporary files so failed requests leave no partial target.
 Generated headers are adjacent to shader sources; normal builds handle regeneration
 and include dependencies. make clean removes build metadata as well as binaries,
-preserving tools and headers; the next build restores missing shader depfiles.
+preserving headers; the next build restores missing shader depfiles.
 
 Optional Host download: make tools/gams.app queries pinned published v3.2.0
 of kkgams/gams, selects its macOS Apple Silicon ZIP and installs GAMS.app as
@@ -219,7 +219,7 @@ tools/gams.app. This ordinary directory target has no prerequisites: an existing
 app stays untouched. Download/extraction staging lives under build.nosync/ and is
 removed on success or failure. The target rejects unsupported hosts and malformed
 releases/archives. It does not launch the app or integrate this experiment with
-the Host, and is not required by all/deps or standalone builds. make clean retains
+the Host, and is not required by all/deps or standalone builds. make clean removes
 it and accompanying release notices. Existing apps remain untouched; select a
 compatible supplied Host with GAMS_HOST_BIN.
 

@@ -166,9 +166,9 @@ content:
 test: web $(BUILD)/test/scene.wasm
 	node --test test/*.test.mjs
 
-# Retain downloaded tools and committed/generated shader headers.
+# Retain committed/generated shader headers; remove disposable downloads.
 clean:
-	rm -rf $(BUILD)
+	python3 scripts/clean.py
 
 -include $(SHADER_DEPFILES)
 
