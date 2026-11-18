@@ -1,6 +1,6 @@
 name: Build and deploy web game
 
-on:
+'on':
   push:
     branches: [release]
   pull_request:

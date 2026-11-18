@@ -14,9 +14,15 @@ void app_choose_reward(float x, float y);
 
 // Stable scalar browser key ABI; never pass browser keyCodes/Sokol enums.
 enum {
-    GAME_KEY_W, GAME_KEY_A, GAME_KEY_S, GAME_KEY_D,
-    GAME_KEY_UP, GAME_KEY_LEFT, GAME_KEY_DOWN, GAME_KEY_RIGHT,
-    GAME_KEY_COUNT
+  GAME_KEY_W,
+  GAME_KEY_A,
+  GAME_KEY_S,
+  GAME_KEY_D,
+  GAME_KEY_UP,
+  GAME_KEY_LEFT,
+  GAME_KEY_DOWN,
+  GAME_KEY_RIGHT,
+  GAME_KEY_COUNT
 };
 
 #endif

@@ -1,3 +1,4 @@
+// clang-format off: Sokol shader directives must stay on separate lines.
 @module sprite
 
 
@@ -87,4 +88,3 @@ void main() {
 @end
 
 @program sprite vs_sprite_base fs_sprite_base
-

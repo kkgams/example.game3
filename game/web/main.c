@@ -18,8 +18,8 @@
 void slog_func(const char *tag, uint32_t log_level, uint32_t log_item,
                const char *message, uint32_t line_nr, const char *filename,
                void *user_data) {
-  __attribute__((import_module("env"), import_name("game_log"))) void
-  game_log(uint32_t level, const char *message, uint32_t item);
+  __attribute__((import_module("env"), import_name("game_log"))) void game_log(
+      uint32_t level, const char *message, uint32_t item);
   game_log(log_level, message, log_item);
   (void)tag;
   (void)line_nr;
@@ -65,7 +65,8 @@ platform_init(void) {
 // Platform frame - calls app frame, exports as "frame" to JS
 __attribute__((visibility("default"), export_name("frame"))) void
 platform_frame(double elapsed) {
-  frame(elapsed); // Seconds supplied by requestAnimationFrame, shared simulation.
+  frame(
+      elapsed); // Seconds supplied by requestAnimationFrame, shared simulation.
 }
 
 // Platform cleanup - calls app cleanup, exports as "cleanup" to JS
@@ -75,14 +76,18 @@ platform_cleanup(void) {
 }
 
 // Scalar input ABI keeps JS independent of sapp_event enum values and layout.
-__attribute__((export_name("resize"))) void platform_resize(int width, int height) {
+__attribute__((export_name("resize"))) void platform_resize(int width,
+                                                            int height) {
   sapp_event e = {.type = SAPP_EVENTTYPE_RESIZED,
-                  .framebuffer_width = width, .framebuffer_height = height};
+                  .framebuffer_width = width,
+                  .framebuffer_height = height};
   event(&e);
 }
 
-__attribute__((export_name("mouse_move"))) void platform_mouse_move(float x, float y) {
-  sapp_event e = {.type = SAPP_EVENTTYPE_MOUSE_MOVE, .mouse_x = x, .mouse_y = y};
+__attribute__((export_name("mouse_move"))) void platform_mouse_move(float x,
+                                                                    float y) {
+  sapp_event e = {
+      .type = SAPP_EVENTTYPE_MOUSE_MOVE, .mouse_x = x, .mouse_y = y};
   event(&e);
 }
 
@@ -90,11 +95,12 @@ __attribute__((export_name("mouse_move"))) void platform_mouse_move(float x, flo
 // one binding cannot cancel a different held binding of the same direction.
 __attribute__((export_name("key"))) void platform_key(int key, int down) {
   const sapp_keycode codes[GAME_KEY_COUNT] = {
-    SAPP_KEYCODE_W, SAPP_KEYCODE_A, SAPP_KEYCODE_S, SAPP_KEYCODE_D,
-    SAPP_KEYCODE_UP, SAPP_KEYCODE_LEFT, SAPP_KEYCODE_DOWN, SAPP_KEYCODE_RIGHT,
+      SAPP_KEYCODE_W,  SAPP_KEYCODE_A,    SAPP_KEYCODE_S,    SAPP_KEYCODE_D,
+      SAPP_KEYCODE_UP, SAPP_KEYCODE_LEFT, SAPP_KEYCODE_DOWN, SAPP_KEYCODE_RIGHT,
   };
   assert(key >= 0 && key < GAME_KEY_COUNT && (down == 0 || down == 1));
-  sapp_event e = {.type = down ? SAPP_EVENTTYPE_KEY_DOWN : SAPP_EVENTTYPE_KEY_UP,
+  sapp_event e = {.type =
+                      down ? SAPP_EVENTTYPE_KEY_DOWN : SAPP_EVENTTYPE_KEY_UP,
                   .key_code = codes[key]};
   event(&e);
 }
@@ -106,14 +112,16 @@ __attribute__((export_name("release_keys"))) void platform_release_keys(void) {
 
 // UI slots 0..5 map to physical 1..6, not simulation upgrade enum values.
 // Slot 3 unlocks blades first and upgrades their damage thereafter.
-__attribute__((export_name("choose_upgrade"))) void platform_choose_upgrade(int option) {
+__attribute__((export_name("choose_upgrade"))) void
+platform_choose_upgrade(int option) {
   assert(option >= 0 && option < 6);
   sapp_event e = {.type = SAPP_EVENTTYPE_KEY_DOWN,
                   .key_code = (sapp_keycode)(SAPP_KEYCODE_1 + option)};
   event(&e);
 }
 
-__attribute__((export_name("choose_reward"))) void platform_choose_reward(float x, float y) {
+__attribute__((export_name("choose_reward"))) void
+platform_choose_reward(float x, float y) {
   app_choose_reward(x, y);
 }
 
@@ -125,7 +133,7 @@ __attribute__((export_name("retry"))) void platform_retry(void) {
 // Platform event - calls app event, exports as "event" to JS
 __attribute__((visibility("default"), export_name("event"))) void
 platform_event(uint32_t event_ptr) {
-  const sapp_event* e = (const sapp_event*)event_ptr;
+  const sapp_event *e = (const sapp_event *)event_ptr;
   event(e); // App event from main.c
 }
 
@@ -137,20 +145,38 @@ platform_get_event_buffer(void) {
 }
 
 // Export critical field offsets for JS to use
-__attribute__((visibility("default"), export_name("event_offset_mouse_x"))) uint32_t
-event_offset_mouse_x(void) { return offsetof(sapp_event, mouse_x); }
+__attribute__((visibility("default"),
+               export_name("event_offset_mouse_x"))) uint32_t
+event_offset_mouse_x(void) {
+  return offsetof(sapp_event, mouse_x);
+}
 
-__attribute__((visibility("default"), export_name("event_offset_mouse_y"))) uint32_t
-event_offset_mouse_y(void) { return offsetof(sapp_event, mouse_y); }
+__attribute__((visibility("default"),
+               export_name("event_offset_mouse_y"))) uint32_t
+event_offset_mouse_y(void) {
+  return offsetof(sapp_event, mouse_y);
+}
 
-__attribute__((visibility("default"), export_name("event_offset_window_width"))) uint32_t
-event_offset_window_width(void) { return offsetof(sapp_event, window_width); }
+__attribute__((visibility("default"),
+               export_name("event_offset_window_width"))) uint32_t
+event_offset_window_width(void) {
+  return offsetof(sapp_event, window_width);
+}
 
-__attribute__((visibility("default"), export_name("event_offset_window_height"))) uint32_t
-event_offset_window_height(void) { return offsetof(sapp_event, window_height); }
+__attribute__((visibility("default"),
+               export_name("event_offset_window_height"))) uint32_t
+event_offset_window_height(void) {
+  return offsetof(sapp_event, window_height);
+}
 
-__attribute__((visibility("default"), export_name("event_offset_framebuffer_width"))) uint32_t
-event_offset_framebuffer_width(void) { return offsetof(sapp_event, framebuffer_width); }
+__attribute__((visibility("default"),
+               export_name("event_offset_framebuffer_width"))) uint32_t
+event_offset_framebuffer_width(void) {
+  return offsetof(sapp_event, framebuffer_width);
+}
 
-__attribute__((visibility("default"), export_name("event_offset_framebuffer_height"))) uint32_t
-event_offset_framebuffer_height(void) { return offsetof(sapp_event, framebuffer_height); }
+__attribute__((visibility("default"),
+               export_name("event_offset_framebuffer_height"))) uint32_t
+event_offset_framebuffer_height(void) {
+  return offsetof(sapp_event, framebuffer_height);
+}

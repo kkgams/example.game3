@@ -1,3 +1,4 @@
+// clang-format off: Sokol shader directives must stay on separate lines.
 @module tilemap
 
 @vs vs

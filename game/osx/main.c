@@ -1,7 +1,7 @@
 #include "../app.h"
 #include "../vendor/sokol_gfx.h"
-#include "../vendor/sokol_log.h"
 #include "../vendor/sokol_glue.h"
+#include "../vendor/sokol_log.h"
 #include <string.h>
 
 static bool smoke_test;
